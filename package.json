@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@google/genai": "^2.22.0",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "express": "^5.2.1",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
