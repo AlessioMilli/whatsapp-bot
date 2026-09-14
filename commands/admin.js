@@ -685,5 +685,4 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
     }
 
     return false;
-}
-```[cite: 2]
+} // <-- QUESTA ERA LA GRAFFA MANCANTE CHE CAUSAVA L'ERRORE DI SINTASSI SU RENDER
