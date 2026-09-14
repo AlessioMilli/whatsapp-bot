@@ -15,7 +15,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 
     const botArt = "🤖";
 
-    // Registra i messaggi recenti per ogni gruppo per fornire contesto all'IA
     if (isGroup && messageText) {
         if (!global.chatHistory.has(chatJid)) {
             global.chatHistory.set(chatJid, []);
@@ -36,19 +35,24 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     };
 
     const getTargetJid = () => {
-        let targetJid = m.message?.extendedTextMessage?.contextInfo?.participant || m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-        if (!targetJid) {
-            for (let i = 1; i < args.length; i++) {
-                let arg = args[i];
-                if (arg.startsWith('@')) {
-                    let clean = arg.slice(1).replace(/[^0-9]/g, '');
-                    if (clean.length > 5) return clean + '@s.whatsapp.net';
-                } else if (/^\d{8,15}$/.test(arg)) {
-                    return arg + '@s.whatsapp.net';
-                }
+        let mentioned = m.message?.extendedTextMessage?.contextInfo?.mentionedJid;
+        if (mentioned && mentioned.length > 0) {
+            return mentioned[0];
+        }
+        let participant = m.message?.extendedTextMessage?.contextInfo?.participant;
+        if (participant) {
+            return participant;
+        }
+        for (let i = 1; i < args.length; i++) {
+            let arg = args[i];
+            if (arg.startsWith('@')) {
+                let clean = arg.slice(1).replace(/[^0-9]/g, '');
+                if (clean.length > 5) return clean + '@s.whatsapp.net';
+            } else if (/^\d{8,15}$/.test(arg)) {
+                return arg + '@s.whatsapp.net';
             }
         }
-        return targetJid;
+        return null;
     };
 
     const ensureBotIsAdmin = async () => {
@@ -193,7 +197,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente.` }, { quoted: m });
             return true;
         }
-        if (isOwner(targetJid) || global.protectedUsers.has(targetJid)) {
+        if (targetJid && (isOwner(targetJid) || global.protectedUsers.has(targetJid))) {
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Non puoi dare un avvertimento a un utente protetto o al proprietario!` }, { quoted: m });
             return true;
         }
@@ -651,7 +655,7 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
             }
         } else {
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
-        }
+            }
         return true;
     }
 
@@ -685,4 +689,4 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
     }
 
     return false;
-} // <-- QUESTA ERA LA GRAFFA MANCANTE CHE CAUSAVA L'ERRORE DI SINTASSI SU RENDER
+}
