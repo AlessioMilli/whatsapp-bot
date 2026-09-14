@@ -55,18 +55,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         }
     };
 
-    // 1. Gestione modalità offline in chat privata
     if (!isGroup && global.offlineMode && !isOwner(sender) && !m.key.fromMe) {
         await sock.sendMessage(chatJid, { text: `${botArt} Al momento Alessio non è disponibile. Ti risponderà appena possibile...` }, { quoted: m });
         return true;
     }
 
-    // 2. Controllo gruppo attivo
     if (isGroup && !global.groupActive && !messageText.startsWith('!gruppo')) {
         return true;
     }
 
-    // 3. Intercettazione utenti mutati
     if (isGroup && mutedUsers && mutedUsers.has(sender)) {
         try {
             await sock.sendMessage(chatJid, { delete: m.key });
@@ -76,20 +73,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // 4. Controllo Cooldown Antispam
     if (global.cooldownEnabled && !isOwner(sender) && !m.key.fromMe) {
         const now = Date.now();
-        const cooldownTime = 4000; // 4 secondi
+        const cooldownTime = 4000;
         if (global.cooldowns.has(sender)) {
             const expirationTime = global.cooldowns.get(sender) + cooldownTime;
             if (now < expirationTime) {
-                return true; // Ignora silenziosamente per spam
+                return true;
             }
         }
         global.cooldowns.set(sender, now);
     }
 
-    // 5. Controllo Cancellazione Automatica Link (!link on)
     if (isGroup && global.linksEnabled && !isOwner(sender) && !m.key.fromMe) {
         const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+\/.+)/gi;
         if (urlRegex.test(messageText)) {
@@ -106,7 +101,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     const args = messageText.trim().split(/ +/);
     const command = args[0].toLowerCase();
 
-    // Menu comandi
     if (command === '!commands' || command === '!menu') {
         const menuText = `${botArt} LISTA COMANDI BOT ${botArt}
 !mute @utente* - Silenzia un utente localmente
@@ -147,15 +141,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Gestione Mute
     if (command === '!mute') {
         let targetJid = getTargetJid();
         if (!targetJid) {
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente da mutare.` }, { quoted: m });
             return true;
         }
-        if (isOwner(targetJid) || global.protectedUsers.has(targetJid) || global.protectedUsers.has('general')) {
-            const protMsg = (global.protectedUsers.has('general') || global.protectedUsers.has(targetJid)) && isOwner(targetJid)
+        const isTargetAlessio = targetJid.includes("393534467571") || isOwner(targetJid);
+        if (isTargetAlessio || global.protectedUsers.has(targetJid) || global.protectedUsers.has('general')) {
+            const protMsg = isTargetAlessio
                 ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
                 : `${botArt} Impossibile eseguire questa operazione per motivi tecnici messi dal proprietario`;
             await sock.sendMessage(chatJid, { text: protMsg }, { quoted: m });
@@ -166,7 +160,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Gestione Unmute
     if (command === '!unmute') {
         let targetJid = getTargetJid();
         if (!targetJid) {
@@ -178,7 +171,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Gestione Warn
     if (command === '!warn') {
         let targetJid = getTargetJid();
         if (!targetJid) {
@@ -212,7 +204,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Kick / Rimuovi
     if (command === '!kick' || command === '!rimuovi') {
         let targetJid = getTargetJid();
         if (!targetJid) {
@@ -234,7 +225,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Promuovi Admin
     if (command === '!promuovi') {
         let targetJid = getTargetJid();
         if (!targetJid) {
@@ -252,7 +242,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Demuovi Admin
     if (command === '!demuovi' || command === '!quickdemote') {
         let targetJid = getTargetJid();
         if (!targetJid) {
@@ -270,7 +259,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Multidemote
     if (command === '!multidemote') {
         const mentionedJid = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         if (mentionedJid.length === 0) {
@@ -288,7 +276,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Editgroup
     if (command === '!editgroup') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
@@ -302,7 +289,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Approva
     if (command === '!approva') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
@@ -316,7 +302,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Addmember
     if (command === '!addmember') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
@@ -324,7 +309,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             return true;
         }
         if (await ensureBotIsAdmin()) {
-            // In Baileys, restrizione aggiunta membri si gestisce tramite groupMemberAddMode se supportato o impostazioni simili, usiamo try/catch sicuro
             try {
                 await sock.groupMemberAddMode(chatJid, status === 'on' ? 'admin_add' : 'all_member_add');
                 await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Restrizione aggiunta membri impostata su: *${status}*` });
@@ -335,7 +319,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // History
     if (command === '!history') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
@@ -348,7 +331,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Invitelink
     if (command === '!invitelink') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
@@ -361,7 +343,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Masskick / Svuotagruppo
     if (command === '!masskick' || command === '!svuotagruppo') {
         if (await ensureBotIsAdmin()) {
             try {
@@ -383,7 +364,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Deletegroup / Eliminagruppo
     if (command === '!deletegroup' || command === '!eliminagruppo') {
         if (await ensureBotIsAdmin()) {
             try {
@@ -404,7 +384,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Web / Cerca con Gemini
     if (command === '!web' || command === '!cerca') {
         const query = args.slice(1).join(' ');
         if (!query) {
@@ -432,7 +411,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Set Gemini API Key
     if (command === '!setgeminiak') {
         if (!isOwner(sender)) {
             await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
@@ -448,7 +426,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Tagall / Tutti
     if (command === '!tagall' || command === '!tutti') {
         const customText = args.slice(1).join(' ');
         if (!customText) {
@@ -471,7 +448,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Poll
     if (command === '!poll') {
         const pollInput = args.slice(1).join(' ');
         if (!pollInput) {
@@ -494,7 +470,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Setname
     if (command === '!setname') {
         const newName = args.slice(1).join(' ');
         if (!newName) {
@@ -512,7 +487,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Lockinfo / Unlockinfo
     if (command === '!lockinfo') {
         if (await ensureBotIsAdmin()) {
             await sock.groupSettingUpdate(chatJid, 'locked');
@@ -529,7 +503,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Link on/off
     if (command === '!link') {
         const status = args[1]?.toLowerCase();
         if (status === 'on') {
@@ -544,7 +517,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Cooldown on/off
     if (command === '!cooldown') {
         const status = args[1]?.toLowerCase();
         if (status === 'on') {
@@ -552,14 +524,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             await sock.sendMessage(chatJid, { text: `${botArt} ⏱️ Cooldown antispam ATTIVATO.` }, { quoted: m });
         } else if (status === 'off') {
             global.cooldownEnabled = false;
-            await sock.sendMessage(chatJid, { text: `${botArt} ⏱️ Cooldown antispam DISATTIVATO.` }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⏱️ Cooldown antispam DISATTIVATA.` }, { quoted: m });
         } else {
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !cooldown on oppure !cooldown off` }, { quoted: m });
         }
         return true;
     }
 
-    // Protezione
     if (command === '!protezione') {
         if (!isOwner(sender)) {
             await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
@@ -589,7 +560,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Setowner
     if (command === '!setowner') {
         if (isOwner(sender)) {
             let targetJid = getTargetJid();
@@ -606,8 +576,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Removeowner
-    if (command === '!removeowner') {
+    if (command === `!removeowner`) {
         if (isOwner(sender)) {
             let targetJid = getTargetJid();
             if (targetJid) {
@@ -617,12 +586,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
                 await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga un utente per rimuovere i poteri di proprietario.` }, { quoted: m });
             }
         } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { migrated: m });
         }
         return true;
     }
 
-    // Offline / Assente
     if (command === '!offline' || command === '!assente') {
         if (isOwner(sender)) {
             global.offlineMode = true;
@@ -631,7 +599,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Online / Presente
     if (command === '!online' || command === '!presente') {
         if (isOwner(sender)) {
             global.offlineMode = false;
@@ -640,7 +607,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Gruppo on/off
     if (command === '!gruppo') {
         let status = args[1];
         if (isOwner(sender)) {
