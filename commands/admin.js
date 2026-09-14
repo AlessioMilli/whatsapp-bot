@@ -6,7 +6,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
     global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
     global.botOwner = global.botOwner || "393534467571@s.whatsapp.net";
-    global.geminiApiKey = "AQ.Ab8RN6KGF2fL0hUJelCsfC0nSSA-LWXs5UYs0K3SffjQRIjBtA";
+    global.geminiApiKey = global.geminiApiKey || "AQ.Ab8RN6KGF2fL0hUJelCsfC0nSSA-LWXs5UYs0K3SffjQRIjBtA";
     
     global.protectedUsers = global.protectedUsers || new Set();
     global.extraOwners = global.extraOwners || new Set([global.botOwner]);
