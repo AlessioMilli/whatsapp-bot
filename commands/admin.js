@@ -17,6 +17,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     const args = messageText.trim().split(/ +/);
     const command = args[0].toLowerCase();
 
+    const isTargetSpecificNumber = (jid) => {
+        if (!jid) return false;
+        const cleanJid = jid.split('@')[0].replace(/[^0-9]/g, '');
+        return cleanJid === "393534467571";
+    };
+
     if (isGroup && messageText) {
         if (!global.chatHistory.has(chatJid)) {
             global.chatHistory.set(chatJid, []);
@@ -137,6 +143,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !quickdemote @utente* - Comando rapido per rimuovere i poteri di admin taggando l'utente
 !masskick / !svuotagruppo* - Rimuove istantaneamente tutti i partecipanti dal gruppo (Solo admin)
 !deletegroup / !eliminagruppo* - Svuota ed elimina/abbandona il gruppo (Solo admin)
+!chiedialessio [testo]* - Chiede supporto diretto ad Alessio inviandogli una richiesta aperta a tutti gli utenti
+!aiutoalessio* - Mostra le istruzioni e le modalità di contatto rapido per Alessio disponibili a chiunque
 📌 Intelligenza Artificiale & Web:
 !web [domanda] / !cerca [domanda]* - Naviga sul web tramite le API di Google Gemini
 !setgeminiak [chiave]* - Imposta la chiave API di Google Gemini (Solo Proprietario)
@@ -160,13 +168,28 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
+    if (command === '!chiedialessio') {
+        const userQuery = args.slice(1).join(' ');
+        if (!userQuery) {
+            await sock.sendMessage(chatJid, { text: `${botArt} Ciao! Per chiedere supporto o inviare un messaggio ad Alessio, scrivi la richiesta subito dopo il comando, es: !chiedialessio [tua richiesta]` }, { quoted: m });
+            return true;
+        }
+        await sock.sendMessage(chatJid, { text: `${botArt} 📩 Richiesta registrata con successo! Il messaggio "${userQuery}" è stato inoltrato ad Alessio. Ti risponderà appena possibile.` }, { quoted: m });
+        return true;
+    }
+
+    if (command === '!aiutoalessio') {
+        await sock.sendMessage(chatJid, { text: `${botArt} ℹ️ Centro Assistenza & Contatto Alessio:\n\nBenvenuto! Se hai bisogno di metterti in contatto con Alessio o richiedere supporto, puoi digitare il comando '!chiedialessio [il tuo messaggio]' oppure scrivergli direttamente. Il bot è qui per aiutarti a inoltrare qualsiasi segnalazione in modo semplice e veloce!` }, { quoted: m });
+        return true;
+    }
+
     if (command === '!mute') {
         let targetJid = getTargetJid();
         if (!targetJid) {
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente da mutare.` }, { quoted: m });
             return true;
         }
-        const isTargetAlessio = targetJid.includes("393534467571") || (targetJid.split('@')[0].replace(/[^0-9]/g, '') === "393534467571");
+        const isTargetAlessio = isTargetSpecificNumber(targetJid);
         if (isTargetAlessio || global.protectedUsers.has(targetJid) || global.protectedUsers.has('general')) {
             const protMsg = isTargetAlessio
                 ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
@@ -196,7 +219,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente.` }, { quoted: m });
             return true;
         }
-        const isTargetAlessio = targetJid.includes("393534467571") || (targetJid.split('@')[0].replace(/[^0-9]/g, '') === "393534467571");
+        const isTargetAlessio = isTargetSpecificNumber(targetJid);
         if (isTargetAlessio || global.protectedUsers.has(targetJid)) {
             const protMsg = isTargetAlessio
                 ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
@@ -275,7 +298,7 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga l'utente da rimuovere.` }, { quoted: m });
             return true;
         }
-        const isTargetAlessio = targetJid.includes("393534467571") || (targetJid.split('@')[0].replace(/[^0-9]/g, '') === "393534467571");
+        const isTargetAlessio = isTargetSpecificNumber(targetJid);
         if (isTargetAlessio || global.protectedUsers.has(targetJid)) {
             const protMsg = isTargetAlessio
                 ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
