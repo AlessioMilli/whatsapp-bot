@@ -6,7 +6,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
     global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
     global.botOwner = global.botOwner || "393534467571@s.whatsapp.net";
-    global.geminiApiKey = global.geminiApiKey || process.env.GEMINI_API_KEY || "";
+    global.geminiApiKey = "AQ.Ab8RN6KGF2fL0hUJelCsfC0nSSA-LWXs5UYs0K3SffjQRIjBtA";
     
     global.protectedUsers = global.protectedUsers || new Set();
     global.extraOwners = global.extraOwners || new Set([global.botOwner]);
@@ -109,7 +109,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         const menuText = `${botArt} LISTA COMANDI BOT ${botArt}
 !mute @utente* - Silenzia un utente localmente
 !unmute @utente* - Rimuove il muto all'utente
-!warn @utente* - Dà un avvertimento (3 = ban)
+!warn @utente* - Dà un avvertimento (3 = provvedimento IA severo)
 !rimuovi / !kick @utente* - Espelle dal gruppo
 !promuovi @utente* - Rende amministratore
 !demuovi @utente* - Toglie i poteri di admin
@@ -192,15 +192,42 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             if (currentWarnings === 1) {
                 await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ @${targetJid.split('@')[0]}, hai ricevuto il 1° avvertimento (1/3).`, mentions: [targetJid] }, { quoted: m });
             } else if (currentWarnings === 2) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ @${targetJid.split('@')[0]}, questo è il tuo secondo avvertimento (2/3). Al terzo verrai bannato!`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ @${targetJid.split('@')[0]}, questo è il tuo secondo avvertimento (2/3). Al terzo scattano provvedimenti severi gestiti dall'intelligenza artificiale!`, mentions: [targetJid] }, { quoted: m });
             } else if (currentWarnings >= 3) {
                 warnings.delete(targetJid);
-                if (await ensureBotIsAdmin()) {
+                
+                let aiDecision = "banned";
+                if (global.geminiApiKey) {
                     try {
-                        await sock.groupParticipantsUpdate(chatJid, [targetJid], "remove");
-                        await sock.sendMessage(chatJid, { text: `${botArt} 🚨 @${targetJid.split('@')[0]} è stato espulso per aver raggiunto 3 avvertimenti.`, mentions: [targetJid] });
+                        const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
+                        const response = await ai.models.generateContent({
+                            model: 'gemini-2.5-flash',
+                            contents: `Analizza la situazione di un utente che ha raggiunto 3 avvertimenti in un gruppo WhatsApp. Scegli se applicare una revoca totale dei poteri e isolamento o procedere direttamente con l'espulsione. Rispondi solo con una parola: "strip" oppure "ban".`,
+                        });
+                        aiDecision = response.text ? response.text.trim().toLowerCase() : "ban";
                     } catch (err) {
-                        await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante il ban dell'utente.` });
+                        console.error("Errore IA decisione warn:", err);
+                    }
+                }
+
+                if (aiDecision.includes("strip")) {
+                    if (await ensureBotIsAdmin()) {
+                        try {
+                            await sock.groupParticipantsUpdate(chatJid, [targetJid], "demote");
+                            if (mutedUsers) mutedUsers.add(targetJid);
+                            await sock.sendMessage(chatJid, { text: `${botArt} 🧠 L'intelligenza artificiale ha analizzato la recidiva di @${targetJid.split('@')[0]}: gli sono stati revocati tutti i poteri ed è stato mutato permanentemente per averti sfidato ancora!`, mentions: [targetJid] });
+                        } catch (err) {
+                            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la revoca dei privilegi da parte dell'IA.` });
+                        }
+                    }
+                } else {
+                    if (await ensureBotIsAdmin()) {
+                        try {
+                            await sock.groupParticipantsUpdate(chatJid, [targetJid], "remove");
+                            await sock.sendMessage(chatJid, { text: `${botArt} 🚨 L'IA ha stabilito l'espulsione immediata per @${targetJid.split('@')[0]} dopo aver raggiunto il limite critico di 3 avvertimenti.`, mentions: [targetJid] });
+                        } catch (err) {
+                            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante il ban dell'utente.` });
+                        }
                     }
                 }
             }
@@ -395,7 +422,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             return true;
         }
         if (!global.geminiApiKey) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Chiave API di Google Gemini non configurata. Impostala con !setgeminiak [chiave]` }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Chiave API di Google Gemini non configurata.` }, { quoted: m });
             return true;
         }
         try {
