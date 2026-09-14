@@ -11,8 +11,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     global.protectedUsers = global.protectedUsers || new Set();
     global.extraOwners = global.extraOwners || new Set([global.botOwner]);
 
-    // Disegno ASCII del bot da includere nelle risposte
-    const botArt = " 🤖 [ ▀▄▀▄▀ ] ";
+    // Icona del bot da includere nelle risposte
+    const botArt = "🤖";
 
     const isOwner = (jid) => {
         if (!jid) return false;
