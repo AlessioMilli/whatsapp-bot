@@ -11,6 +11,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     global.protectedUsers = global.protectedUsers || new Set();
     global.extraOwners = global.extraOwners || new Set([global.botOwner]);
 
+    // Disegno ASCII del bot da includere nelle risposte
+    const botArt = " 🤖 [ ▀▄▀▄▀ ] ";
+
     const isOwner = (jid) => {
         if (!jid) return false;
         const cleanJid = jid.split('@')[0].replace(/[^0-9]/g, '');
@@ -42,7 +45,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             const isBotAdmin = botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
             
             if (!isBotAdmin) {
-                await sock.sendMessage(chatJid, { text: "❌ Errore: Il bot deve essere amministratore del gruppo per eseguire questo comando." }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore: Il bot deve essere amministratore del gruppo per eseguire questo comando.` }, { quoted: m });
                 return false;
             }
             return true;
@@ -54,7 +57,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 
     // 1. Gestione modalità offline in chat privata
     if (!isGroup && global.offlineMode && !isOwner(sender) && !m.key.fromMe) {
-        await sock.sendMessage(chatJid, { text: "Al momento Alessio non è disponibile. Ti risponderà appena possibile..." }, { quoted: m });
+        await sock.sendMessage(chatJid, { text: `${botArt} Al momento Alessio non è disponibile. Ti risponderà appena possibile...` }, { quoted: m });
         return true;
     }
 
@@ -78,7 +81,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 
     // Menu comandi
     if (command === '!commands' || command === '!menu') {
-        const menuText = `🤖 LISTA COMANDI BOT 🤖
+        const menuText = `${botArt} *LISTA COMANDI BOT* ${botArt}
 
 !mute @utente* - Silenzia un utente localmente
 !unmute @utente* - Rimuove il muto all'utente
@@ -123,15 +126,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!mute') {
         let targetJid = getTargetJid();
         if (!targetJid) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga o rispondi a un utente da mutare." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente da mutare.` }, { quoted: m });
             return true;
         }
         if (isOwner(targetJid) || global.protectedUsers.has(targetJid)) {
-            await sock.sendMessage(chatJid, { text: "Impossibile eseguire questa operazione per motivi tecnici messi dal proprietario" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} Impossibile eseguire questa operazione per motivi tecnici messi dal proprietario` }, { quoted: m });
             return true;
         }
         if (mutedUsers) mutedUsers.add(targetJid);
-        await sock.sendMessage(chatJid, { text: `🔇 L'utente @${targetJid.split('@')[0]} è stato mutato localmente.`, mentions: [targetJid] }, { quoted: m });
+        await sock.sendMessage(chatJid, { text: `${botArt} 🔇 L'utente @${targetJid.split('@')[0]} è stato mutato localmente.`, mentions: [targetJid] }, { quoted: m });
         return true;
     }
 
@@ -139,11 +142,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!unmute') {
         let targetJid = getTargetJid();
         if (!targetJid) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga o rispondi a un utente da smutare." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente da smutare.` }, { quoted: m });
             return true;
         }
         if (mutedUsers) mutedUsers.delete(targetJid);
-        await sock.sendMessage(chatJid, { text: `🔊 L'utente @${targetJid.split('@')[0]} è stato smutato con successo.`, mentions: [targetJid] }, { quoted: m });
+        await sock.sendMessage(chatJid, { text: `${botArt} 🔊 L'utente @${targetJid.split('@')[0]} è stato smutato con successo.`, mentions: [targetJid] }, { quoted: m });
         return true;
     }
 
@@ -151,11 +154,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!warn') {
         let targetJid = getTargetJid();
         if (!targetJid) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga o rispondi a un utente." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente.` }, { quoted: m });
             return true;
         }
         if (isOwner(targetJid) || global.protectedUsers.has(targetJid)) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Non puoi dare un avvertimento a un utente protetto o al proprietario!" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Non puoi dare un avvertimento a un utente protetto o al proprietario!` }, { quoted: m });
             return true;
         }
         if (warnings) {
@@ -163,17 +166,17 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             warnings.set(targetJid, currentWarnings);
 
             if (currentWarnings === 1) {
-                await sock.sendMessage(chatJid, { text: `⚠️ @${targetJid.split('@')[0]}, hai ricevuto il 1° avvertimento (1/3).`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ @${targetJid.split('@')[0]}, hai ricevuto il 1° avvertimento (1/3).`, mentions: [targetJid] }, { quoted: m });
             } else if (currentWarnings === 2) {
-                await sock.sendMessage(chatJid, { text: `⚠️ @${targetJid.split('@')[0]}, questo è il tuo secondo avvertimento (2/3). Al terzo verrai bannato!`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ @${targetJid.split('@')[0]}, questo è il tuo secondo avvertimento (2/3). Al terzo verrai bannato!`, mentions: [targetJid] }, { quoted: m });
             } else if (currentWarnings >= 3) {
                 warnings.delete(targetJid);
                 if (await ensureBotIsAdmin()) {
                     try {
                         await sock.groupParticipantsUpdate(chatJid, [targetJid], "remove");
-                        await sock.sendMessage(chatJid, { text: `🚨 @${targetJid.split('@')[0]} è stato espulso per aver raggiunto 3 avvertimenti.`, mentions: [targetJid] });
+                        await sock.sendMessage(chatJid, { text: `${botArt} 🚨 @${targetJid.split('@')[0]} è stato espulso per aver raggiunto 3 avvertimenti.`, mentions: [targetJid] });
                     } catch (err) {
-                        await sock.sendMessage(chatJid, { text: "❌ Errore durante il ban dell'utente." });
+                        await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante il ban dell'utente.` });
                     }
                 }
             }
@@ -185,19 +188,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!kick' || command === '!rimuovi') {
         let targetJid = getTargetJid();
         if (!targetJid) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Tagga l'utente da rimuovere." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga l'utente da rimuovere.` }, { quoted: m });
             return true;
         }
         if (isOwner(targetJid) || global.protectedUsers.has(targetJid)) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Non puoi rimuovere un utente protetto o il proprietario!" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Non puoi rimuovere un utente protetto o il proprietario!` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             try {
                 await sock.groupParticipantsUpdate(chatJid, [targetJid], "remove");
-                await sock.sendMessage(chatJid, { text: `👋 Utente @${targetJid.split('@')[0]} rimosso con successo.`, mentions: [targetJid] });
+                await sock.sendMessage(chatJid, { text: `${botArt} 👋 Utente @${targetJid.split('@')[0]} rimosso con successo.`, mentions: [targetJid] });
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Impossibile rimuovere l'utente." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile rimuovere l'utente.` });
             }
         }
         return true;
@@ -207,15 +210,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!promuovi') {
         let targetJid = getTargetJid();
         if (!targetJid) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Tagga l'utente da promuovere." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga l'utente da promuovere.` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             try {
                 await sock.groupParticipantsUpdate(chatJid, [targetJid], "promote");
-                await sock.sendMessage(chatJid, { text: `⭐ L'utente @${targetJid.split('@')[0]} è stato promosso ad amministratore.`, mentions: [targetJid] });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⭐ L'utente @${targetJid.split('@')[0]} è stato promosso ad amministratore.`, mentions: [targetJid] });
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Impossibile promuovere l'utente." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile promuovere l'utente.` });
             }
         }
         return true;
@@ -225,15 +228,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!demuovi' || command === '!quickdemote') {
         let targetJid = getTargetJid();
         if (!targetJid) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Tagga l'utente a cui togliere i poteri." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga l'utente a cui togliere i poteri.` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             try {
                 await sock.groupParticipantsUpdate(chatJid, [targetJid], "demote");
-                await sock.sendMessage(chatJid, { text: `🛡️ All'utente @${targetJid.split('@')[0]} sono stati revocati i poteri di amministratore.`, mentions: [targetJid] });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ All'utente @${targetJid.split('@')[0]} sono stati revocati i poteri di amministratore.`, mentions: [targetJid] });
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Impossibile rimuovere i poteri di admin." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile rimuovere i poteri di admin.` });
             }
         }
         return true;
@@ -243,15 +246,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!multidemote') {
         const mentionedJid = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         if (mentionedJid.length === 0) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Tagga almeno un utente a cui rimuovere i poteri." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga almeno un utente a cui rimuovere i poteri.` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             try {
                 await sock.groupParticipantsUpdate(chatJid, mentionedJid, "demote");
-                await sock.sendMessage(chatJid, { text: `🛡️ Poteri di admin rimossi con successo a tutti gli utenti selezionati.` });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Poteri di admin rimossi con successo a tutti gli utenti selezionati.` });
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Errore durante la rimozione multipla dei poteri." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la rimozione multipla dei poteri.` });
             }
         }
         return true;
@@ -261,12 +264,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!editgroup') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: "⚠️ Usa: !editgroup on oppure !editgroup off" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !editgroup on oppure !editgroup off` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             await sock.groupSettingUpdate(chatJid, status === 'on' ? 'locked' : 'unlocked');
-            await sock.sendMessage(chatJid, { text: `⚙️ Modifica informazioni gruppo impostata su: *${status}*` });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Modifica informazioni gruppo impostata su: *${status}*` });
         }
         return true;
     }
@@ -275,12 +278,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!approva') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: "⚠️ Usa: !approva on oppure !approva off" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !approva on oppure !approva off` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             await sock.groupJoinApprovalMode(chatJid, status === 'on' ? 'on' : 'off');
-            await sock.sendMessage(chatJid, { text: `🛡️ Approvazione nuovi membri impostata su: *${status}*` });
+            await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Approvazione nuovi membri impostata su: *${status}*` });
         }
         return true;
     }
@@ -296,12 +299,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
                 
                 if (participantsToRemove.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participantsToRemove, "remove");
-                    await sock.sendMessage(chatJid, { text: "🚨 Gruppo svuotato con successo da tutti i membri non amministratori." });
+                    await sock.sendMessage(chatJid, { text: `${botArt} 🚨 Gruppo svuotato con successo da tutti i membri non amministratori.` });
                 } else {
-                    await sock.sendMessage(chatJid, { text: "ℹ️ Nessun membro idoneo alla rimozione trovato." });
+                    await sock.sendMessage(chatJid, { text: `${botArt} ℹ️ Nessun membro idoneo alla rimozione trovato.` });
                 }
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Errore durante lo svuotamento del gruppo." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante lo svuotamento del gruppo.` });
             }
         }
         return true;
@@ -319,10 +322,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
                 if (participantsToRemove.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participantsToRemove, "remove");
                 }
-                await sock.sendMessage(chatJid, { text: "⚠️ Eliminazione del gruppo in corso..." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Eliminazione del gruppo in corso...` });
                 await sock.groupLeave(chatJid);
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Impossibile eliminare/abbandonare il gruppo." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile eliminare/abbandonare il gruppo.` });
             }
         }
         return true;
@@ -332,11 +335,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!web' || command === '!cerca') {
         const query = args.slice(1).join(' ');
         if (!query) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Inserisci una domanda o una ricerca da effettuare." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserisci una domanda o una ricerca da effettuare.` }, { quoted: m });
             return true;
         }
         if (!global.geminiApiKey) {
-            await sock.sendMessage(chatJid, { text: "❌ Chiave API di Google Gemini non configurata. Impostala con !setgeminiak [chiave]" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Chiave API di Google Gemini non configurata. Impostala con !setgeminiak [chiave]` }, { quoted: m });
             return true;
         }
         try {
@@ -348,10 +351,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
                     tools: [{ googleSearch: {} }]
                 }
             });
-            await sock.sendMessage(chatJid, { text: response.text || "Nessun risultato trovato." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ${response.text || "Nessun risultato trovato."}` }, { quoted: m });
         } catch (err) {
             console.error("Errore Gemini Web Search:", err);
-            await sock.sendMessage(chatJid, { text: "❌ Errore durante l'elaborazione della ricerca web." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante l'elaborazione della ricerca web.` }, { quoted: m });
         }
         return true;
     }
@@ -359,16 +362,16 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     // Set Gemini API Key
     if (command === '!setgeminiak') {
         if (!isOwner(sender)) {
-            await sock.sendMessage(chatJid, { text: "Al momento non puoi usare questo comando perché questo comando è riservato al proprietario." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
             return true;
         }
         const newKey = args[1];
         if (!newKey) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Specifica la chiave API da impostare." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Specifica la chiave API da impostare.` }, { quoted: m });
             return true;
         }
         global.geminiApiKey = newKey;
-        await sock.sendMessage(chatJid, { text: "✅ Chiave API di Google Gemini aggiornata con successo." }, { quoted: m });
+        await sock.sendMessage(chatJid, { text: `${botArt} ✅ Chiave API di Google Gemini aggiornata con successo.` }, { quoted: m });
         return true;
     }
 
@@ -377,7 +380,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         try {
             const groupMetadata = await sock.groupMetadata(chatJid);
             const participants = groupMetadata.participants;
-            let textToSend = `📢 *AVVISO GENERALE* 📢\n\n`;
+            let textToSend = `${botArt} *AVVISO GENERALE* ${botArt}\n\n`;
             let mentions = [];
             for (const p of participants) {
                 textToSend += `@${p.id.split('@')[0]} `;
@@ -394,14 +397,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!poll') {
         const pollInput = args.slice(1).join(' ');
         if (!pollInput) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Formato non valido. Usa: !poll Domanda? | Opz 1 | Opz 2" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Formato non valido. Usa: !poll Domanda? | Opz 1 | Opz 2` }, { quoted: m });
             return true;
         }
         const parts = pollInput.split('|').map(p => p.trim());
         const question = parts[0];
         const options = parts.slice(1);
         if (options.length < 2) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Inserire almeno due opzioni separate da |." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserire almeno due opzioni separate da |.` }, { quoted: m });
             return true;
         }
         await sock.sendMessage(chatJid, {
@@ -417,15 +420,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!setname') {
         const newName = args.slice(1).join(' ');
         if (!newName) {
-            await sock.sendMessage(chatJid, { text: "⚠️ Specifica il nuovo nome del gruppo." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Specifica il nuovo nome del gruppo.` }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
             try {
                 await sock.groupUpdateSubject(chatJid, newName);
-                await sock.sendMessage(chatJid, { text: `✅ Titolo aggiornato in: *${newName}*` });
+                await sock.sendMessage(chatJid, { text: `${botArt} ✅ Titolo aggiornato in: *${newName}*` });
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: "❌ Errore durante l'aggiornamento del titolo." });
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante l'aggiornamento del titolo.` });
             }
         }
         return true;
@@ -435,7 +438,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!lockinfo') {
         if (await ensureBotIsAdmin()) {
             await sock.groupSettingUpdate(chatJid, 'locked');
-            await sock.sendMessage(chatJid, { text: "🔒 Informazioni del gruppo bloccate (solo admin)." });
+            await sock.sendMessage(chatJid, { text: `${botArt} 🔒 Informazioni del gruppo bloccate (solo admin).` });
         }
         return true;
     }
@@ -443,7 +446,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!unlockinfo') {
         if (await ensureBotIsAdmin()) {
             await sock.groupSettingUpdate(chatJid, 'unlocked');
-            await sock.sendMessage(chatJid, { text: "🔓 Informazioni del gruppo sbloccate (tutti i membri)." });
+            await sock.sendMessage(chatJid, { text: `${botArt} 🔓 Informazioni del gruppo sbloccate (tutti i membri).` });
         }
         return true;
     }
@@ -451,7 +454,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     // Protezione
     if (command === '!protezione') {
         if (!isOwner(sender)) {
-            await sock.sendMessage(chatJid, { text: "Al momento non puoi usare questo comando perché questo comando è riservato al proprietario." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
             return true;
         }
         let status = args[1];
@@ -460,18 +463,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         if (status === 'on') {
             if (targetJid) {
                 global.protectedUsers.add(targetJid);
-                await sock.sendMessage(chatJid, { text: `🛡️ L'utente @${targetJid.split('@')[0]} ora è protetto ed è intoccabile come il proprietario!`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ L'utente @${targetJid.split('@')[0]} ora è protetto ed è intoccabile come il proprietario!`, mentions: [targetJid] }, { quoted: m });
             } else {
                 global.protectedUsers.add('general');
-                await sock.sendMessage(chatJid, { text: "🛡️ Protezione generale del gruppo ATTIVATA." }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Protezione generale del gruppo ATTIVATA.` }, { quoted: m });
             }
         } else if (status === 'off') {
             if (targetJid) {
                 global.protectedUsers.delete(targetJid);
-                await sock.sendMessage(chatJid, { text: `🛡️ Protezione rimossa per l'utente @${targetJid.split('@')[0]}`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Protezione rimossa per l'utente @${targetJid.split('@')[0]}`, mentions: [targetJid] }, { quoted: m });
             } else {
                 global.protectedUsers.clear();
-                await sock.sendMessage(chatJid, { text: "🛡️ Protezione disattivata completamente." }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Protezione disattivata completamente.` }, { quoted: m });
             }
         }
         return true;
@@ -484,12 +487,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             if (targetJid) {
                 global.extraOwners.add(targetJid);
                 global.protectedUsers.add(targetJid);
-                await sock.sendMessage(chatJid, { text: `👑 L'utente @${targetJid.split('@')[0]} è ora ufficialmente un proprietario del bot!`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 👑 L'utente @${targetJid.split('@')[0]} è ora ufficialmente un proprietario del bot!`, mentions: [targetJid] }, { quoted: m });
             } else {
-                await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente per renderlo proprietario." }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga un utente per renderlo proprietario.` }, { quoted: m });
             }
         } else {
-            await sock.sendMessage(chatJid, { text: "⚠️ Comando riservato al creatore principale del bot." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
         }
         return true;
     }
@@ -500,12 +503,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             let targetJid = getTargetJid();
             if (targetJid) {
                 global.extraOwners.delete(targetJid);
-                await sock.sendMessage(chatJid, { text: `🛡️ Rimossi i poteri di proprietario all'utente @${targetJid.split('@')[0]}`, mentions: [targetJid] }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Rimossi i poteri di proprietario all'utente @${targetJid.split('@')[0]}`, mentions: [targetJid] }, { quoted: m });
             } else {
-                await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente per rimuovere i poteri di proprietario." }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga un utente per rimuovere i poteri di proprietario.` }, { quoted: m });
             }
         } else {
-            await sock.sendMessage(chatJid, { text: "⚠️ Comando riservato al creatore principale del bot." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
         }
         return true;
     }
@@ -514,7 +517,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!offline' || command === '!assente') {
         if (isOwner(sender)) {
             global.offlineMode = true;
-            await sock.sendMessage(chatJid, { text: "🔴 Modalità offline attivata con successo." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} 🔴 Modalità offline attivata con successo.` }, { quoted: m });
         }
         return true;
     }
@@ -523,7 +526,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     if (command === '!online' || command === '!presente') {
         if (isOwner(sender)) {
             global.offlineMode = false;
-            await sock.sendMessage(chatJid, { text: "🟢 Alessio è ora disponibile per risponderti!" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} 🟢 Alessio è ora disponibile per risponderti!` }, { quoted: m });
         }
         return true;
     }
@@ -534,10 +537,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         if (isOwner(sender)) {
             if (status === 'on' || status === 'off') {
                 global.groupActive = (status === 'on');
-                await sock.sendMessage(chatJid, { text: `🤖 Risposta del bot in questo gruppo impostata su: ${status}` }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: `${botArt} 🤖 Risposta del bot in questo gruppo impostata su: ${status}` }, { quoted: m });
             }
         } else {
-            await sock.sendMessage(chatJid, { text: "Al momento non puoi usare questo comando perché questo comando è riservato al proprietario." }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
         }
         return true;
     }
