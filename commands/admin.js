@@ -27,10 +27,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     const getTargetJid = () => {
         let targetJid = m.message?.extendedTextMessage?.contextInfo?.participant || m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
         if (!targetJid) {
-            const query = messageText.split(' ')[1];
-            if (query) {
-                let cleanQuery = query.startsWith('@') ? query.slice(1) : query;
-                targetJid = cleanQuery.includes('@') ? cleanQuery : cleanQuery + '@s.whatsapp.net';
+            for (let i = 1; i < args.length; i++) {
+                let arg = args[i];
+                if (arg.startsWith('@')) {
+                    let clean = arg.slice(1).replace(/[^0-9]/g, '');
+                    if (clean.length > 5) return clean + '@s.whatsapp.net';
+                } else if (/^\d{8,15}$/.test(arg)) {
+                    return arg + '@s.whatsapp.net';
+                }
             }
         }
         return targetJid;
@@ -536,8 +540,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
             return true;
         }
-        let status = args[1];
+        
+        let status = args.find(arg => arg.toLowerCase() === 'on' || arg.toLowerCase() === 'off')?.toLowerCase();
         let targetJid = getTargetJid();
+
+        if (!status) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Specifica se attivare o disattivare la protezione usando 'on' o 'off'.` }, { quoted: m });
+            return true;
+        }
 
         if (status === 'on') {
             if (targetJid) {
@@ -576,7 +586,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    if (command === `!removeowner`) {
+    if (command === '!removeowner') {
         if (isOwner(sender)) {
             let targetJid = getTargetJid();
             if (targetJid) {
@@ -586,7 +596,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
                 await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga un utente per rimuovere i poteri di proprietario.` }, { quoted: m });
             }
         } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { migrated: m });
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
         }
         return true;
     }
