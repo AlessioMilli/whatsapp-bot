@@ -112,7 +112,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         if (urlRegex.test(messageText)) {
             try {
                 await sock.sendMessage(chatJid, { delete: m.key });
-                await sock.sendMessage(chatJid, { text: `${botArt} Ragazzi, sono il chatbot di moderazione di @Alessio (+39 35344667571). Se volete inviare link esterni dovete prima contattare il proprietario`, mentions: ["393534467571@s.whatsapp.net"] });
+                await sock.sendMessage(chatJid, { text: `${botArt} Ragazzi, sono il chatbot di moderazione di @Alessio (+39 3534467571). Se volete inviare link esterni dovete prima contattare il proprietario`, mentions: ["393534467571@s.whatsapp.net"] });
             } catch (err) {
                 console.error("Errore gestione link:", err);
             }
@@ -166,7 +166,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente da mutare.` }, { quoted: m });
             return true;
         }
-        const isTargetAlessio = targetJid.includes("393534467571") || isOwner(targetJid);
+        const isTargetAlessio = targetJid.includes("393534467571") || (targetJid.split('@')[0].replace(/[^0-9]/g, '') === "393534467571");
         if (isTargetAlessio || global.protectedUsers.has(targetJid) || global.protectedUsers.has('general')) {
             const protMsg = isTargetAlessio
                 ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
@@ -196,8 +196,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Per favore, tagga o rispondi a un utente.` }, { quoted: m });
             return true;
         }
-        if (targetJid && (isOwner(targetJid) || global.protectedUsers.has(targetJid))) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Non puoi dare un avvertimento a un utente protetto o al proprietario!` }, { quoted: m });
+        const isTargetAlessio = targetJid.includes("393534467571") || (targetJid.split('@')[0].replace(/[^0-9]/g, '') === "393534467571");
+        if (isTargetAlessio || global.protectedUsers.has(targetJid)) {
+            const protMsg = isTargetAlessio
+                ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
+                : `${botArt} ⚠️ Non puoi dare un avvertimento a un utente protetto o al proprietario!`;
+            await sock.sendMessage(chatJid, { text: protMsg }, { quoted: m });
             return true;
         }
         if (warnings) {
@@ -271,8 +275,12 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga l'utente da rimuovere.` }, { quoted: m });
             return true;
         }
-        if (isOwner(targetJid) || global.protectedUsers.has(targetJid)) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Non puoi rimuovere un utente protetto o il proprietario!` }, { quoted: m });
+        const isTargetAlessio = targetJid.includes("393534467571") || (targetJid.split('@')[0].replace(/[^0-9]/g, '') === "393534467571");
+        if (isTargetAlessio || global.protectedUsers.has(targetJid)) {
+            const protMsg = isTargetAlessio
+                ? `${botArt} Impossibile eseguire questa azione perché sono stato programmato per proteggere il mio capo, essendo lui stesso ad avermi creato`
+                : `${botArt} ⚠️ Non puoi rimuovere un utente protetto o il proprietario!`;
+            await sock.sendMessage(chatJid, { text: protMsg }, { quoted: m });
             return true;
         }
         if (await ensureBotIsAdmin()) {
