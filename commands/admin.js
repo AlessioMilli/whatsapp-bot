@@ -14,6 +14,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     global.chatHistory = global.chatHistory || new Map();
 
     const botArt = "🤖";
+    const args = messageText.trim().split(/ +/);
+    const command = args[0].toLowerCase();
 
     if (isGroup && messageText) {
         if (!global.chatHistory.has(chatJid)) {
@@ -117,9 +119,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             return true;
         }
     }
-
-    const args = messageText.trim().split(/ +/);
-    const command = args[0].toLowerCase();
 
     if (command === '!commands' || command === '!menu') {
         const menuText = `${botArt} LISTA COMANDI BOT ${botArt}
@@ -655,7 +654,7 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
             }
         } else {
             await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
-            }
+        }
         return true;
     }
 
