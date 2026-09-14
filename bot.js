@@ -9,6 +9,10 @@ import { handleModeration as moderationExecute } from './commands/moderation.js'
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.get('/', (req, res) => {
+    res.status(200).send('Bot attivo e online!');
+});
+
 app.get('/ping', (req, res) => {
     res.status(200).send('Bot attivo e online!');
 });
