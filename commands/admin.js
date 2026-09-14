@@ -53,6 +53,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 
     const ensureBotIsAdmin = async () => {
         if (!isGroup) return true;
+        if (isOwner(sender)) return true;
         try {
             const groupMetadata = await sock.groupMetadata(chatJid);
             const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
@@ -685,3 +686,4 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
 
     return false;
 }
+```[cite: 2]
