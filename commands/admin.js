@@ -11,8 +11,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     global.protectedUsers = global.protectedUsers || new Set();
     global.extraOwners = global.extraOwners || new Set([global.botOwner]);
     global.cooldowns = global.cooldowns || new Map();
+    global.chatHistory = global.chatHistory || new Map();
 
     const botArt = "🤖";
+
+    // Registra i messaggi recenti per ogni gruppo per fornire contesto all'IA
+    if (isGroup && messageText) {
+        if (!global.chatHistory.has(chatJid)) {
+            global.chatHistory.set(chatJid, []);
+        }
+        let history = global.chatHistory.get(chatJid);
+        history.push({ sender: sender.split('@')[0], text: messageText, time: Date.now() });
+        if (history.length > 20) history.shift();
+    }
 
     const isOwner = (jid) => {
         if (!jid) return false;
@@ -109,7 +120,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         const menuText = `${botArt} LISTA COMANDI BOT ${botArt}
 !mute @utente* - Silenzia un utente localmente
 !unmute @utente* - Rimuove il muto all'utente
-!warn @utente* - Dà un avvertimento (3 = provvedimento IA severo)
+!warn @utente* - Dà un avvertimento (3 = analisi intelligente del contesto e provvedimento)
 !rimuovi / !kick @utente* - Espelle dal gruppo
 !promuovi @utente* - Rende amministratore
 !demuovi @utente* - Toglie i poteri di admin
@@ -194,37 +205,52 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
             } else if (currentWarnings === 2) {
                 await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ @${targetJid.split('@')[0]}, questo è il tuo secondo avvertimento (2/3). Al terzo scattano provvedimenti severi gestiti dall'intelligenza artificiale!`, mentions: [targetJid] }, { quoted: m });
             } else if (currentWarnings >= 3) {
-                warnings.delete(targetJid);
-                
-                let aiDecision = "banned";
+                let targetNumber = targetJid.split('@')[0];
+                let historyContext = global.chatHistory.has(chatJid) ? global.chatHistory.get(chatJid) : [];
+                let transcript = historyContext.map(h => `[${h.sender}]: ${h.text}`).join('\n');
+
+                let aiVerdict = "ban";
                 if (global.geminiApiKey) {
                     try {
                         const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
+                        const prompt = `Sei un assistente moderatore di un gruppo WhatsApp. L'utente con numero/id ${targetNumber} ha raggiunto 3 avvertimenti. 
+Analizza la seguente cronologia recente della chat per capire se l'utente ha effettivamente commesso infrazioni gravi, insulti, provocazioni o comportamenti scorretti, oppure se non ha fatto nulla di rilevante o si tratta di un equivoco:
+
+${transcript}
+
+Se l'utente NON ha fatto nulla di male, non ci sono insulti o le accuse sono infondate, rispondi ESATTAMENTE con la parola "absolve" (per perdonarlo e azzerare i warn).
+Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca poteri/muto) o "ban" (per espulsione). Rispondi solo con una di queste tre parole: absolve, strip, ban.`;
+
                         const response = await ai.models.generateContent({
                             model: 'gemini-2.5-flash',
-                            contents: `Analizza la situazione di un utente che ha raggiunto 3 avvertimenti in un gruppo WhatsApp. Scegli se applicare una revoca totale dei poteri e isolamento o procedere direttamente con l'espulsione. Rispondi solo con una parola: "strip" oppure "ban".`,
+                            contents: prompt,
                         });
-                        aiDecision = response.text ? response.text.trim().toLowerCase() : "ban";
+                        aiVerdict = response.text ? response.text.trim().toLowerCase() : "ban";
                     } catch (err) {
-                        console.error("Errore IA decisione warn:", err);
+                        console.error("Errore IA analisi contesto warn:", err);
                     }
                 }
 
-                if (aiDecision.includes("strip")) {
+                if (aiVerdict.includes("absolve")) {
+                    warnings.delete(targetJid);
+                    await sock.sendMessage(chatJid, { text: `${botArt} 🧠 L'intelligenza artificiale ha analizzato la chat e ha verificato che @${targetNumber} non ha commesso alcuna infrazione o insulto recente. Avvertimenti azzerati per equità!`, mentions: [targetJid] });
+                } else if (aiVerdict.includes("strip")) {
+                    warnings.delete(targetJid);
                     if (await ensureBotIsAdmin()) {
                         try {
                             await sock.groupParticipantsUpdate(chatJid, [targetJid], "demote");
                             if (mutedUsers) mutedUsers.add(targetJid);
-                            await sock.sendMessage(chatJid, { text: `${botArt} 🧠 L'intelligenza artificiale ha analizzato la recidiva di @${targetJid.split('@')[0]}: gli sono stati revocati tutti i poteri ed è stato mutato permanentemente per averti sfidato ancora!`, mentions: [targetJid] });
+                            await sock.sendMessage(chatJid, { text: `${botArt} 🧠 L'intelligenza artificiale ha esaminato i messaggi e ha riscontrato comportamenti scorretti da parte di @${targetNumber}: gli sono stati revocati i poteri ed è stato mutato.`, mentions: [targetJid] });
                         } catch (err) {
-                            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la revoca dei privilegi da parte dell'IA.` });
+                            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante l'applicazione del provvedimento dell'IA.` });
                         }
                     }
                 } else {
+                    warnings.delete(targetJid);
                     if (await ensureBotIsAdmin()) {
                         try {
                             await sock.groupParticipantsUpdate(chatJid, [targetJid], "remove");
-                            await sock.sendMessage(chatJid, { text: `${botArt} 🚨 L'IA ha stabilito l'espulsione immediata per @${targetJid.split('@')[0]} dopo aver raggiunto il limite critico di 3 avvertimenti.`, mentions: [targetJid] });
+                            await sock.sendMessage(chatJid, { text: `${botArt} 🚨 L'IA ha analizzato la chat e ha confermato l'espulsione immediata di @${targetNumber} per violazioni rilevate nei messaggi.`, mentions: [targetJid] });
                         } catch (err) {
                             await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante il ban dell'utente.` });
                         }
