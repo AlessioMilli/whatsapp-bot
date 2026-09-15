@@ -1,4 +1,4 @@
-import { import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 
 // Mappa globale per memorizzare quali gruppi hanno il cooldown attivo (non globale per tutti)
 global.groupCooldowns = global.groupCooldowns || new Map();
@@ -141,6 +141,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 
     if (command === '!commands' || command === '!menu') {
         const menuText = `${botArt} LISTA COMANDI BOT ${botArt}
+
 !mute @utente* - Silenzia un utente localmente
 !unmute @utente* - Rimuove il muto all'utente
 !warn @utente* - Dà un avvertimento (3 = analisi intelligente del contesto e provvedimento)
@@ -159,9 +160,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !deletegroup / !eliminagruppo* - Svuota ed elimina/abbandona il gruppo (Solo admin)
 !chiedialessio [testo]* - Chiede supporto diretto ad Alessio inviandogli una richiesta aperta a tutti gli utenti
 !aiutoalessio* - Mostra le istruzioni e le modalità di contatto rapido per Alessio disponibili a chiunque
+
 📌 Intelligenza Artificiale & Web:
 !web [domanda] / !cerca [domanda]* - Naviga sul web tramite le API di Google Gemini
 !setgeminiak [chiave]* - Imposta la chiave API di Google Gemini (Solo Proprietario)
+
 📌 Gruppo & Sicurezza:
 !tagall / !tutti* - Manda un avviso a tutti
 !poll Domanda? | Opz 1 | Opz 2* - Crea un sondaggio
