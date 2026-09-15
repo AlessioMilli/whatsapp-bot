@@ -1,5 +1,11 @@
 import { GoogleGenAI } from '@google/genai';
 
+// Mappa globale per memorizzare quali gruppi hanno il cooldown attivo (non globale per tutti)
+global.groupCooldowns = global.groupCooldowns || new Map();
+// Mappa per tracciare l'ultimo messaggio inviato dai singoli utenti nei vari gruppi
+const userCooldowns = new Map();
+const COOLDOWN_TIME = 5000; // 5 secondi di attesa
+
 export async function execute(sock, m, chatJid, messageText, sender, isGroup, mutedUsers, warnings) {
     global.linksEnabled = global.linksEnabled !== undefined ? global.linksEnabled : false;
     global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
@@ -99,6 +105,22 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
+    // Controllo del Cooldown specifico per questo gruppo (non globale)
+    if (isGroup && global.groupCooldowns.get(chatJid) === true && !m.key.fromMe && !isOwner(sender)) {
+        const cooldownKey = `${chatJid}_${sender}`;
+        const now = Date.now();
+        const lastMessageTime = userCooldowns.get(cooldownKey) || 0;
+
+        if (now - lastMessageTime < COOLDOWN_TIME) {
+            await sock.sendMessage(chatJid, { 
+                text: `${botArt} ⚠️ Piano con i messaggi! Attendi qualche secondo prima di scrivere di nuovo.` 
+            }, { quoted: m });
+            return true; 
+        }
+
+        userCooldowns.set(cooldownKey, now);
+    }
+
     if (isGroup && global.linksEnabled && !isOwner(sender) && !m.key.fromMe) {
         const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+\/.+)/gi;
         if (urlRegex.test(messageText)) {
@@ -121,6 +143,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !promuovi @utente* - Rende amministratore
 !demuovi @utente* - Toglie i poteri di admin
 !multidemote @utente1 @utente2* - Rimuove i poteri di admin a più utenti taggati
+!cooldown on/off* - Attiva o disattiva il cooldown/rallentamento antispam solo in questo gruppo specifico
 !editgroup on/off* - Attiva/disattiva modifica info gruppo per i soli admin
 !approva on/off* - Attiva/disattiva l'approvazione dei nuovi membri
 !addmember on/off* - Attiva/disattiva la restrizione per aggiungere altri membri (solo admin)
@@ -150,6 +173,20 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !removeowner @utente* - Rimuove i poteri di proprietario a un utente (Solo Creatore Principale)`;
 
         await sock.sendMessage(chatJid, { text: menuText }, { quoted: m });
+        return true;
+    }
+
+    if (command === '!cooldown') {
+        const status = args[1]?.toLowerCase();
+        if (status !== 'on' && status !== 'off') {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !cooldown on oppure !cooldown off` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            const isActive = (status === 'on');
+            global.groupCooldowns.set(chatJid, isActive);
+            await sock.sendMessage(chatJid, { text: `${botArt} ⏱️ Il cooldown antispam in questo gruppo è stato impostato su: *${status}*` }, { quoted: m });
+        }
         return true;
     }
 
@@ -330,43 +367,4 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
                 await sock.groupParticipantsUpdate(chatJid, [targetJid], "demote");
                 await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ All'utente @${targetJid.split('@')[0]} sono stati revocati i poteri di amministratore.`, mentions: [targetJid] });
             } catch (err) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile rimuovere i poteri di admin.` });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!multidemote') {
-        const mentionedJid = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        if (mentionedJid.length === 0) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga almeno un utente a cui rimuovere i poteri.` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            try {
-                await sock.groupParticipantsUpdate(chatJid, mentionedJid, "demote");
-                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Poteri di admin rimossi con successo a tutti gli utenti selezionati.` });
-            } catch (err) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la rimozione multipla dei poteri.` });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!editgroup') {
-        const status = args[1]?.toLowerCase();
-        if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !editgroup on oppure !editgroup off` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            await sock.groupSettingUpdate(chatJid, status === 'on' ? 'locked' : 'unlocked');
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Modifica informazioni gruppo impostata su: *${status}*` });
-        }
-        return true;
-    }
-
-    if (command === '!approva') {
-        const status = args[1]?.toLowerCase();
-        if (status !== 'on' && status !== 'off') {
-        
+       
