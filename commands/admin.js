@@ -1,7 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 
-// Mappa globale per memorizzare quali gruppi hanno il cooldown attivo
+// Mappa globale per memorizzare quali gruppi hanno il cooldown attivo e chi ha ricevuto l'avviso di ritorno
 global.groupCooldowns = global.groupCooldowns || new Map();
+global.notifiedUsers = global.notifiedUsers || new Set();
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 5000; // 5 secondi di attesa
 
@@ -18,7 +19,36 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 
     const botArt = "🤖";
     const args = messageText.trim().split(/ +/);
-    const command = args[0].toLowerCase();
+    const command = args[0] ? args[0].toLowerCase() : '';
+
+    const isPrivateChatWithSelf = !isGroup && (sender.includes("393534467571") || chatJid.includes("393534467571") || m.key.fromMe);
+
+    const isOwner = (jid) => {
+        if (!jid && m.key.fromMe) return true;
+        if (!jid) return false;
+        const cleanJid = jid.split('@')[0].replace(/[^0-9]/g, '');
+        const cleanOwner = global.botOwner.split('@')[0].replace(/[^0-9]/g, '');
+        if (cleanJid === cleanOwner || cleanJid === "393534467571") return true;
+        for (const owner of global.extraOwners) {
+            if (owner.split('@')[0].replace(/[^0-9]/g, '') === cleanJid) return true;
+        }
+        return m.key.fromMe;
+    };
+
+    // Gestione esclusiva di !offline e !online nella tua chat privata con te stesso
+    if (!isGroup && isOwner(sender)) {
+        if (command === '!offline' || command === '!assente') {
+            global.offlineMode = true;
+            global.notifiedUsers.clear(); // Resetta la lista così al prossimo online riceveranno l'avviso
+            await sock.sendMessage(chatJid, { text: `${botArt} 🔴 Modalità offline attivata per tutte le chat private.` }, { quoted: m });
+            return true;
+        }
+        if (command === '!online' || command === '!presente') {
+            global.offlineMode = false;
+            await sock.sendMessage(chatJid, { text: `${botArt} 🟢 Bot online e disponibile in tutte le chat private!` }, { quoted: m });
+            return true;
+        }
+    }
 
     // Filtro rigoroso: nei gruppi, se il messaggio non inizia con '!', il bot lo ignora completamente
     if (isGroup && !messageText.startsWith('!')) {
@@ -39,16 +69,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         history.push({ sender: sender.split('@')[0], text: messageText, time: Date.now() });
         if (history.length > 20) history.shift();
     }
-
-    const isOwner = (jid) => {
-        if (!jid) return false;
-        const cleanJid = jid.split('@')[0].replace(/[^0-9]/g, '');
-        if (cleanJid === global.botOwner.split('@')[0].replace(/[^0-9]/g, '')) return true;
-        for (const owner of global.extraOwners) {
-            if (owner.split('@')[0].replace(/[^0-9]/g, '') === cleanJid) return true;
-        }
-        return true; // Consentito sempre se sei tu
-    };
 
     const getTargetJid = () => {
         let mentioned = m.message?.extendedTextMessage?.contextInfo?.mentionedJid;
@@ -91,9 +111,17 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         }
     };
 
-    if (!isGroup && global.offlineMode && !isOwner(sender)) {
-        await sock.sendMessage(chatJid, { text: `${botArt} Al momento Alessio non è disponibile. Ti risponderà appena possibile...` }, { quoted: m });
-        return true;
+    // Gestione risposte automatiche nelle chat private con gli altri utenti
+    if (!isGroup && !isOwner(sender) && !isPrivateChatWithSelf) {
+        if (global.offlineMode) {
+            await sock.sendMessage(chatJid, { text: `${botArt} Alessio al momento non è disponibile. Ti risponderà appena rientra nella chat.` }, { quoted: m });
+            return true;
+        } else {
+            if (!global.notifiedUsers.has(sender)) {
+                global.notifiedUsers.add(sender);
+                await sock.sendMessage(chatJid, { text: `${botArt} Alessio è ora disponibile per risponderti.` }, { quoted: m });
+            }
+        }
     }
 
     if (isGroup && !global.groupActive && !messageText.startsWith('!gruppo')) {
@@ -172,8 +200,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !unlockinfo* - Sblocca le info del gruppo
 !link on* - Attiva la cancellazione automatica dei link esterni
 !link off* - Disattiva la cancellazione automatica dei link
-!offline / !assente* - Attiva la modalità offline (usabile ovunque dal proprietario)
-!online / !presente* - Disattiva la modalità offline
+!offline / !assente* - Attiva la modalità offline in tutte le chat private (usabile solo da te nella tua chat)
+!online / !presente* - Disattiva la modalità offline in tutte le chat private
 !protezione on/off* - Attiva/disattiva la protezione generale o su uno specifico utente (@utente)
 !gruppo on/off* - Attiva/disattiva la risposta del bot in questo specifico gruppo (Solo Proprietario)
 !setowner @utente* - Promuove un utente a proprietario del bot (Solo Creatore Principale)
@@ -496,22 +524,6 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
             } catch (err) {
                 await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore aggiornamento nome.` });
             }
-        }
-        return true;
-    }
-
-    if (command === '!offline' || command === '!assente') {
-        if (isOwner(sender)) {
-            global.offlineMode = true;
-            await sock.sendMessage(chatJid, { text: `${botArt} 🔴 Modalità offline attivata.` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!online' || command === '!presente') {
-        if (isOwner(sender)) {
-            global.offlineMode = false;
-            await sock.sendMessage(chatJid, { text: `${botArt} 🟢 Bot online e disponibile!` }, { quoted: m });
         }
         return true;
     }
