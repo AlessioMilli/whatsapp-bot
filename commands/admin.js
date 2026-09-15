@@ -451,6 +451,65 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
         return true;
     }
 
+    if (command === '!invitelink') {
+        const status = args[1]?.toLowerCase();
+        if (status !== 'on' && status !== 'off') {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !invitelink on oppure !invitelink off` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            try {
+                if (status === 'off') {
+                    await sock.groupRevokeInvite(chatJid);
+                    await sock.sendMessage(chatJid, { text: `${botArt} 🔗 Il link d'invito del gruppo è stato disattivato/revocato.` });
+                } else {
+                    const code = await sock.groupInviteCode(chatJid);
+                    await sock.sendMessage(chatJid, { text: `${botArt} 🔗 Link d'invito attivo. Link: https://chat.whatsapp.com/${code}` });
+                }
+            } catch (err) {
+                console.error("Errore gestione link d'invito:", err);
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile modificare lo stato del link d'invito.` });
+            }
+        }
+        return true;
+    }
+
+    if (command === '!addmember') {
+        const status = args[1]?.toLowerCase();
+        if (status !== 'on' && status !== 'off') {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !addmember on oppure !addmember off` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            try {
+                await sock.groupUpdateRestrict(chatJid, status === 'on');
+                await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Restrizione per aggiungere membri impostata su: *${status}*` });
+            } catch (err) {
+                console.error("Errore addmember:", err);
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la modifica dell'impostazione addmember.` });
+            }
+        }
+        return true;
+    }
+
+    if (command === '!history') {
+        const status = args[1]?.toLowerCase();
+        if (status !== 'on' && status !== 'off') {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !history on oppure !history off` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            try {
+                await sock.groupToggleAddRecentHistory(chatJid, status === 'on');
+                await sock.sendMessage(chatJid, { text: `${botArt} 🕒 Cronologia messaggi per i nuovi membri impostata su: *${status}*` });
+            } catch (err) {
+                console.error("Errore history:", err);
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la modifica della cronologia per i nuovi membri.` });
+            }
+        }
+        return true;
+    }
+
     if (command === '!web' || command === '!cerca') {
         const query = args.slice(1).join(' ');
         if (!query) {
