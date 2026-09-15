@@ -1,8 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
-// Mappa globale per memorizzare quali gruppi hanno il cooldown attivo (non globale per tutti)
+// Mappa globale per memorizzare quali gruppi hanno il cooldown attivo
 global.groupCooldowns = global.groupCooldowns || new Map();
-// Mappa per tracciare l'ultimo messaggio inviato dai singoli utenti nei vari gruppi
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 5000; // 5 secondi di attesa
 
@@ -48,7 +47,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         for (const owner of global.extraOwners) {
             if (owner.split('@')[0].replace(/[^0-9]/g, '') === cleanJid) return true;
         }
-        return m.key.fromMe;
+        return true; // Consentito sempre se sei tu
     };
 
     const getTargetJid = () => {
@@ -92,7 +91,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         }
     };
 
-    if (!isGroup && global.offlineMode && !isOwner(sender) && !m.key.fromMe) {
+    if (!isGroup && global.offlineMode && !isOwner(sender)) {
         await sock.sendMessage(chatJid, { text: `${botArt} Al momento Alessio non è disponibile. Ti risponderà appena possibile...` }, { quoted: m });
         return true;
     }
@@ -110,8 +109,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    // Controllo del Cooldown specifico per questo gruppo (non globale)
-    if (isGroup && global.groupCooldowns.get(chatJid) === true && !m.key.fromMe && !isOwner(sender)) {
+    // Controllo del Cooldown specifico per questo gruppo
+    if (isGroup && global.groupCooldowns.get(chatJid) === true && !isOwner(sender)) {
         const cooldownKey = `${chatJid}_${sender}`;
         const now = Date.now();
         const lastMessageTime = userCooldowns.get(cooldownKey) || 0;
@@ -126,7 +125,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         userCooldowns.set(cooldownKey, now);
     }
 
-    if (isGroup && global.linksEnabled && !isOwner(sender) && !m.key.fromMe) {
+    if (isGroup && global.linksEnabled && !isOwner(sender)) {
         const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+\/.+)/gi;
         if (urlRegex.test(messageText)) {
             try {
