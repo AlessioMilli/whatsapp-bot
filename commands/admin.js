@@ -2,7 +2,6 @@ import { GoogleGenAI } from '@google/genai';
 
 export async function execute(sock, m, chatJid, messageText, sender, isGroup, mutedUsers, warnings) {
     global.linksEnabled = global.linksEnabled !== undefined ? global.linksEnabled : false;
-    global.cooldownEnabled = global.cooldownEnabled !== undefined ? global.cooldownEnabled : false;
     global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
     global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
     global.botOwner = global.botOwner || "393534467571@s.whatsapp.net";
@@ -10,7 +9,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     
     global.protectedUsers = global.protectedUsers || new Set();
     global.extraOwners = global.extraOwners || new Set([global.botOwner]);
-    global.cooldowns = global.cooldowns || new Map();
     global.chatHistory = global.chatHistory || new Map();
 
     const botArt = "🤖";
@@ -101,18 +99,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
         return true;
     }
 
-    if (global.cooldownEnabled && !isOwner(sender) && !m.key.fromMe) {
-        const now = Date.now();
-        const cooldownTime = 4000;
-        if (global.cooldowns.has(sender)) {
-            const expirationTime = global.cooldowns.get(sender) + cooldownTime;
-            if (now < expirationTime) {
-                return true;
-            }
-        }
-        global.cooldowns.set(sender, now);
-    }
-
     if (isGroup && global.linksEnabled && !isOwner(sender) && !m.key.fromMe) {
         const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][-a-zA-Z0-9]{0,62}(\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+\/.+)/gi;
         if (urlRegex.test(messageText)) {
@@ -138,7 +124,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !editgroup on/off* - Attiva/disattiva modifica info gruppo per i soli admin
 !approva on/off* - Attiva/disattiva l'approvazione dei nuovi membri
 !addmember on/off* - Attiva/disattiva la restrizione per aggiungere altri membri (solo admin)
-!history on/off* - Attiva/disattiva l'invio della cronologia dei messaggi ai nuovi membri (solo admin)
+!history on/off* - Attiva/disattiva l'invio della cronologia dei messaggi ai nouveaux membri (solo admin)
 !invitelink on/off* - Attiva/disattiva l'accesso tramite link d'invito al gruppo (solo admin)
 !quickdemote @utente* - Comando rapido per rimuovere i poteri di admin taggando l'utente
 !masskick / !svuotagruppo* - Rimuove istantaneamente tutti i partecipanti dal gruppo (Solo admin)
@@ -156,7 +142,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !unlockinfo* - Sblocca le info del gruppo
 !link on* - Attiva la cancellazione automatica dei link esterni
 !link off* - Disattiva la cancellazione automatica dei link
-!cooldown on/off* - Attiva/disattiva il limite di tempo antispam tra i comandi
 !offline / !assente* - Attiva la modalità offline (usabile ovunque dal proprietario)
 !online / !presente* - Disattiva la modalità offline
 !protezione on/off* - Attiva/disattiva la protezione generale o su uno specifico utente (@utente)
@@ -384,339 +369,4 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
     if (command === '!approva') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !approva on oppure !approva off` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            await sock.groupJoinApprovalMode(chatJid, status === 'on' ? 'on' : 'off');
-            await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Approvazione nuovi membri impostata su: *${status}*` });
-        }
-        return true;
-    }
-
-    if (command === '!addmember') {
-        const status = args[1]?.toLowerCase();
-        if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !addmember on oppure !addmember off` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            try {
-                await sock.groupMemberAddMode(chatJid, status === 'on' ? 'admin_add' : 'all_member_add');
-                await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Restrizione aggiunta membri impostata su: *${status}*` });
-            } catch (e) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Comando addmember elaborato.` });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!history') {
-        const status = args[1]?.toLowerCase();
-        if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !history on oppure !history off` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Cronologia per i nuovi membri impostata su: *${status}*` });
-        }
-        return true;
-    }
-
-    if (command === '!invitelink') {
-        const status = args[1]?.toLowerCase();
-        if (status !== 'on' && status !== 'off') {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !invitelink on oppure !invitelink off` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Accesso tramite link d'invito impostato su: *${status}*` });
-        }
-        return true;
-    }
-
-    if (command === '!masskick' || command === '!svuotagruppo') {
-        if (await ensureBotIsAdmin()) {
-            try {
-                const metadata = await sock.groupMetadata(chatJid);
-                const participantsToRemove = metadata.participants
-                    .filter(p => p.admin === null && !isOwner(p.id) && !global.protectedUsers.has(p.id))
-                    .map(p => p.id);
-                
-                if (participantsToRemove.length > 0) {
-                    await sock.groupParticipantsUpdate(chatJid, participantsToRemove, "remove");
-                    await sock.sendMessage(chatJid, { text: `${botArt} 🚨 Gruppo svuotato con successo da tutti i membri non amministratori.` });
-                } else {
-                    await sock.sendMessage(chatJid, { text: `${botArt} ℹ️ Nessun membro idoneo alla rimozione trovato.` });
-                }
-            } catch (err) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante lo svuotamento del gruppo.` });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!deletegroup' || command === '!eliminagruppo') {
-        if (await ensureBotIsAdmin()) {
-            try {
-                const metadata = await sock.groupMetadata(chatJid);
-                const participantsToRemove = metadata.participants
-                    .filter(p => p.id !== sock.user.id && !isOwner(p.id))
-                    .map(p => p.id);
-                
-                if (participantsToRemove.length > 0) {
-                    await sock.groupParticipantsUpdate(chatJid, participantsToRemove, "remove");
-                }
-                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Eliminazione del gruppo in corso...` });
-                await sock.groupLeave(chatJid);
-            } catch (err) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile eliminare/abbandonare il gruppo.` });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!web' || command === '!cerca') {
-        const query = args.slice(1).join(' ');
-        if (!query) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserisci una domanda o una ricerca da effettuare.` }, { quoted: m });
-            return true;
-        }
-        if (!global.geminiApiKey) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Chiave API di Google Gemini non configurata.` }, { quoted: m });
-            return true;
-        }
-        try {
-            const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: query,
-                config: {
-                    tools: [{ googleSearch: {} }]
-                }
-            });
-            await sock.sendMessage(chatJid, { text: `${botArt} ${response.text || "Nessun risultato trovato."}` }, { quoted: m });
-        } catch (err) {
-            console.error("Errore Gemini Web Search:", err);
-            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante l'elaborazione della ricerca web.` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!setgeminiak') {
-        if (!isOwner(sender)) {
-            await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
-            return true;
-        }
-        const newKey = args[1];
-        if (!newKey) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Specifica la chiave API da impostare.` }, { quoted: m });
-            return true;
-        }
-        global.geminiApiKey = newKey;
-        await sock.sendMessage(chatJid, { text: `${botArt} ✅ Chiave API di Google Gemini aggiornata con successo.` }, { quoted: m });
-        return true;
-    }
-
-    if (command === '!tagall' || command === '!tutti') {
-        const customText = args.slice(1).join(' ');
-        if (!customText) {
-            await sock.sendMessage(chatJid, { text: `${botArt} Cosa vorresti scrivere nell'avviso?` }, { quoted: m });
-            return true;
-        }
-        try {
-            const groupMetadata = await sock.groupMetadata(chatJid);
-            const participants = groupMetadata.participants;
-            let textToSend = `${botArt} *AVVISO GENERALE* ${botArt}\n\n${customText}\n\n`;
-            let mentions = [];
-            for (const p of participants) {
-                textToSend += `@${p.id.split('@')[0]} `;
-                mentions.push(p.id);
-            }
-            await sock.sendMessage(chatJid, { text: textToSend, mentions: mentions }, { quoted: m });
-        } catch (err) {
-            console.error("Errore tagall:", err);
-        }
-        return true;
-    }
-
-    if (command === '!poll') {
-        const pollInput = args.slice(1).join(' ');
-        if (!pollInput) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Formato non valido. Usa: !poll Domanda? | Opz 1 | Opz 2` }, { quoted: m });
-            return true;
-        }
-        const parts = pollInput.split('|').map(p => p.trim());
-        const question = parts[0];
-        const options = parts.slice(1);
-        if (options.length < 2) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserire almeno due opzioni separate da |.` }, { quoted: m });
-            return true;
-        }
-        await sock.sendMessage(chatJid, {
-            poll: {
-                name: question,
-                values: options
-            }
-        });
-        return true;
-    }
-
-    if (command === '!setname') {
-        const newName = args.slice(1).join(' ');
-        if (!newName) {
-            await sock.sendMessage(chatJid, { text: `${botArt} Cosa vuoi che metto sul titolo del gruppo?` }, { quoted: m });
-            return true;
-        }
-        if (await ensureBotIsAdmin()) {
-            try {
-                await sock.groupUpdateSubject(chatJid, newName);
-                await sock.sendMessage(chatJid, { text: `${botArt} ✅ Titolo aggiornato in: *${newName}*` });
-            } catch (err) {
-                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante l'aggiornamento del titolo.` });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!lockinfo') {
-        if (await ensureBotIsAdmin()) {
-            await sock.groupSettingUpdate(chatJid, 'locked');
-            await sock.sendMessage(chatJid, { text: `${botArt} 🔒 Informazioni del gruppo bloccate (solo admin).` });
-        }
-        return true;
-    }
-
-    if (command === '!unlockinfo') {
-        if (await ensureBotIsAdmin()) {
-            await sock.groupSettingUpdate(chatJid, 'unlocked');
-            await sock.sendMessage(chatJid, { text: `${botArt} 🔓 Informazioni del gruppo sbloccate (tutti i membri).` });
-        }
-        return true;
-    }
-
-    if (command === '!link') {
-        const status = args[1]?.toLowerCase();
-        if (status === 'on') {
-            global.linksEnabled = true;
-            await sock.sendMessage(chatJid, { text: `${botArt} 🔗 Cancellazione automatica dei link esterni ATTIVATA.` }, { quoted: m });
-        } else if (status === 'off') {
-            global.linksEnabled = false;
-            await sock.sendMessage(chatJid, { text: `${botArt} 🔗 Cancellazione automatica dei link esterni DISATTIVATA.` }, { quoted: m });
-        } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !link on oppure !link off` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!cooldown') {
-        const status = args[1]?.toLowerCase();
-        if (status === 'on') {
-            global.cooldownEnabled = true;
-            await sock.sendMessage(chatJid, { text: `${botArt} ⏱️ Cooldown antispam ATTIVATO.` }, { quoted: m });
-        } else if (status === 'off') {
-            global.cooldownEnabled = false;
-            await sock.sendMessage(chatJid, { text: `${botArt} ⏱️ Cooldown antispam DISATTIVATA.` }, { quoted: m });
-        } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !cooldown on oppure !cooldown off` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!protezione') {
-        if (!isOwner(sender)) {
-            await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
-            return true;
-        }
-        
-        let status = args.find(arg => arg.toLowerCase() === 'on' || arg.toLowerCase() === 'off')?.toLowerCase();
-        let targetJid = getTargetJid();
-
-        if (!status) {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Specifica se attivare o disattivare la protezione usando 'on' o 'off'.` }, { quoted: m });
-            return true;
-        }
-
-        if (status === 'on') {
-            if (targetJid) {
-                global.protectedUsers.add(targetJid);
-                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ L'utente @${targetJid.split('@')[0]} ora è protetto ed è intoccabile come il proprietario!`, mentions: [targetJid] }, { quoted: m });
-            } else {
-                global.protectedUsers.add('general');
-                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Protezione generale del gruppo ATTIVATA.` }, { quoted: m });
-            }
-        } else if (status === 'off') {
-            if (targetJid) {
-                global.protectedUsers.delete(targetJid);
-                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Protezione rimossa per l'utente @${targetJid.split('@')[0]}`, mentions: [targetJid] }, { quoted: m });
-            } else {
-                global.protectedUsers.delete('general');
-                global.protectedUsers.clear();
-                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Protezione disattivata completamente.` }, { quoted: m });
-            }
-        }
-        return true;
-    }
-
-    if (command === '!setowner') {
-        if (isOwner(sender)) {
-            let targetJid = getTargetJid();
-            if (targetJid) {
-                global.extraOwners.add(targetJid);
-                global.protectedUsers.add(targetJid);
-                await sock.sendMessage(chatJid, { text: `${botArt} 👑 L'utente @${targetJid.split('@')[0]} è ora ufficialmente un proprietario del bot!`, mentions: [targetJid] }, { quoted: m });
-            } else {
-                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga un utente per renderlo proprietario.` }, { quoted: m });
-            }
-        } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!removeowner') {
-        if (isOwner(sender)) {
-            let targetJid = getTargetJid();
-            if (targetJid) {
-                global.extraOwners.delete(targetJid);
-                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Rimossi i poteri di proprietario all'utente @${targetJid.split('@')[0]}`, mentions: [targetJid] }, { quoted: m });
-            } else {
-                await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga un utente per rimuovere i poteri di proprietario.` }, { quoted: m });
-            }
-        } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Comando riservato al creatore principale del bot.` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!offline' || command === '!assente') {
-        if (isOwner(sender)) {
-            global.offlineMode = true;
-            await sock.sendMessage(chatJid, { text: `${botArt} 🔴 Modalità offline attivata con successo.` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!online' || command === '!presente') {
-        if (isOwner(sender)) {
-            global.offlineMode = false;
-            await sock.sendMessage(chatJid, { text: `${botArt} 🟢 Alessio è ora disponibile per risponderti!` }, { quoted: m });
-        }
-        return true;
-    }
-
-    if (command === '!gruppo') {
-        let status = args[1];
-        if (isOwner(sender)) {
-            if (status === 'on' || status === 'off') {
-                global.groupActive = (status === 'on');
-                await sock.sendMessage(chatJid, { text: `${botArt} 🤖 Risposta del bot in questo gruppo impostata su: ${status}` }, { quoted: m });
-            }
-        } else {
-            await sock.sendMessage(chatJid, { text: `${botArt} Al momento non puoi usare questo comando perché questo comando è riservato al proprietario.` }, { quoted: m });
-        }
-        return true;
-    }
-
-    return false;
-}
+     
