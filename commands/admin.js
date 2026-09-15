@@ -124,7 +124,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
 !editgroup on/off* - Attiva/disattiva modifica info gruppo per i soli admin
 !approva on/off* - Attiva/disattiva l'approvazione dei nuovi membri
 !addmember on/off* - Attiva/disattiva la restrizione per aggiungere altri membri (solo admin)
-!history on/off* - Attiva/disattiva l'invio della cronologia dei messaggi ai nouveaux membri (solo admin)
+!history on/off* - Attiva/disattiva l'invio della cronologia dei messaggi ai nuovi membri (solo admin)
 !invitelink on/off* - Attiva/disattiva l'accesso tramite link d'invito al gruppo (solo admin)
 !quickdemote @utente* - Comando rapido per rimuovere i poteri di admin taggando l'utente
 !masskick / !svuotagruppo* - Rimuove istantaneamente tutti i partecipanti dal gruppo (Solo admin)
@@ -369,4 +369,4 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
     if (command === '!approva') {
         const status = args[1]?.toLowerCase();
         if (status !== 'on' && status !== 'off') {
-     
+        
