@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { import { GoogleGenAI } from '@google/genai';
 
 // Mappa globale per memorizzare quali gruppi hanno il cooldown attivo (non globale per tutti)
 global.groupCooldowns = global.groupCooldowns || new Map();
@@ -20,6 +20,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup, mu
     const botArt = "🤖";
     const args = messageText.trim().split(/ +/);
     const command = args[0].toLowerCase();
+
+    // Filtro rigoroso: nei gruppi, se il messaggio non inizia con '!', il bot lo ignora completamente
+    if (isGroup && !messageText.startsWith('!')) {
+        return true;
+    }
 
     const isTargetSpecificNumber = (jid) => {
         if (!jid) return false;
@@ -367,4 +372,147 @@ Se invece ha insultato o violato le regole, rispondi con "strip" (per revoca pot
                 await sock.groupParticipantsUpdate(chatJid, [targetJid], "demote");
                 await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ All'utente @${targetJid.split('@')[0]} sono stati revocati i poteri di amministratore.`, mentions: [targetJid] });
             } catch (err) {
-       
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Impossibile rimuovere i poteri di admin.` });
+            }
+        }
+        return true;
+    }
+
+    if (command === '!multidemote') {
+        const mentionedJid = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        if (mentionedJid.length === 0) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Tagga almeno un utente a cui rimuovere i poteri.` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            try {
+                await sock.groupParticipantsUpdate(chatJid, mentionedJid, "demote");
+                await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Poteri di admin rimossi con successo a tutti gli utenti selezionati.` });
+            } catch (err) {
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la rimozione multipla dei poteri.` });
+            }
+        }
+        return true;
+    }
+
+    if (command === '!editgroup') {
+        const status = args[1]?.toLowerCase();
+        if (status !== 'on' && status !== 'off') {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !editgroup on oppure !editgroup off` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            await sock.groupSettingUpdate(chatJid, status === 'on' ? 'locked' : 'unlocked');
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚙️ Modifica informazioni gruppo impostata su: *${status}*` });
+        }
+        return true;
+    }
+
+    if (command === '!approva') {
+        const status = args[1]?.toLowerCase();
+        if (status !== 'on' && status !== 'off') {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !approva on oppure !approva off` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            await sock.groupJoinApprovalMode(chatJid, status === 'on' ? 'on' : 'off');
+            await sock.sendMessage(chatJid, { text: `${botArt} 🛡️ Approvazione membri impostata su: *${status}*` });
+        }
+        return true;
+    }
+
+    if (command === '!web' || command === '!cerca') {
+        const query = args.slice(1).join(' ');
+        if (!query) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserisci una ricerca da effettuare.` }, { quoted: m });
+            return true;
+        }
+        if (!global.geminiApiKey) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ❌ API Key di Gemini non configurata.` }, { quoted: m });
+            return true;
+        }
+        try {
+            const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: query,
+                config: { tools: [{ googleSearch: {} }] }
+            });
+            await sock.sendMessage(chatJid, { text: `${botArt} ${response.text || "Nessun risultato."}` }, { quoted: m });
+        } catch (err) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore durante la ricerca web.` }, { quoted: m });
+        }
+        return true;
+    }
+
+    if (command === '!tagall' || command === '!tutti') {
+        const customText = args.slice(1).join(' ');
+        if (!customText) {
+            await sock.sendMessage(chatJid, { text: `${botArt} Scrivi il testo dell'avviso dopo il comando.` }, { quoted: m });
+            return true;
+        }
+        try {
+            const groupMetadata = await sock.groupMetadata(chatJid);
+            let textToSend = `${botArt} *AVVISO* ${botArt}\n\n${customText}\n\n`;
+            let mentions = [];
+            for (const p of groupMetadata.participants) {
+                textToSend += `@${p.id.split('@')[0]} `;
+                mentions.push(p.id);
+            }
+            await sock.sendMessage(chatJid, { text: textToSend, mentions: mentions }, { quoted: m });
+        } catch (err) {
+            console.error(err);
+        }
+        return true;
+    }
+
+    if (command === '!poll') {
+        const pollInput = args.slice(1).join(' ');
+        if (!pollInput) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Usa: !poll Domanda? | Opz 1 | Opz 2` }, { quoted: m });
+            return true;
+        }
+        const parts = pollInput.split('|').map(p => p.trim());
+        if (parts.length < 3) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserire domanda e almeno due opzioni separate da |.` }, { quoted: m });
+            return true;
+        }
+        await sock.sendMessage(chatJid, { poll: { name: parts[0], values: parts.slice(1) } });
+        return true;
+    }
+
+    if (command === '!setname') {
+        const newName = args.slice(1).join(' ');
+        if (!newName) {
+            await sock.sendMessage(chatJid, { text: `${botArt} ⚠️ Inserisci il nuovo nome del gruppo.` }, { quoted: m });
+            return true;
+        }
+        if (await ensureBotIsAdmin()) {
+            try {
+                await sock.groupUpdateSubject(chatJid, newName);
+                await sock.sendMessage(chatJid, { text: `${botArt} ✅ Nome aggiornato in: *${newName}*` });
+            } catch (err) {
+                await sock.sendMessage(chatJid, { text: `${botArt} ❌ Errore aggiornamento nome.` });
+            }
+        }
+        return true;
+    }
+
+    if (command === '!offline' || command === '!assente') {
+        if (isOwner(sender)) {
+            global.offlineMode = true;
+            await sock.sendMessage(chatJid, { text: `${botArt} 🔴 Modalità offline attivata.` }, { quoted: m });
+        }
+        return true;
+    }
+
+    if (command === '!online' || command === '!presente') {
+        if (isOwner(sender)) {
+            global.offlineMode = false;
+            await sock.sendMessage(chatJid, { text: `${botArt} 🟢 Bot online e disponibile!` }, { quoted: m });
+        }
+        return true;
+    }
+
+    return false;
+}
