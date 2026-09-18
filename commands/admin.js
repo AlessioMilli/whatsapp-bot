@@ -232,16 +232,28 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-3.6-flash',
-                        contents: query,
-                    });
+                    let response;
+                    
+                    let tentativi = 3;
+                    while (tentativi > 0) {
+                        try {
+                            response = await ai.models.generateContent({
+                                model: 'gemini-3.6-flash',
+                                contents: query,
+                            });
+                            break; 
+                        } catch (err) {
+                            tentativi--;
+                            if (tentativi === 0) throw err;
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    }
                     
                     const responseText = response.text || (response.candidates && response.candidates[0]?.content?.parts[0]?.text) || "Nessuna risposta generata.";
                     await sock.sendMessage(chatJid, { text: `🌍 *Risultato Web*:\n${responseText}` }, { quoted: m });
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
-                    await sock.sendMessage(chatJid, { text: `❌ Errore API: ${error.message || "Controlla la chiave API."}` }, { quoted: m });
+                    await sock.sendMessage(chatJid, { text: `❌ I server sono molto occupati in questo momento. Riprova tra qualche istante!` }, { quoted: m });
                 }
                 return true;
             }
@@ -257,10 +269,22 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 let rispostaAi = `Ho ricevuto la tua richiesta: "${query}".`;
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-3.6-flash',
-                        contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". Tieni conto che il bot ha già comandi per la gestione utenti, gruppi e IA. Spiega gentilmente se esiste già o conferma l'inoltro.`,
-                    });
+                    let response;
+                    let tentativi = 3;
+                    
+                    while (tentativi > 0) {
+                        try {
+                            response = await ai.models.generateContent({
+                                model: 'gemini-3.6-flash',
+                                contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". Tieni conto che il bot ha già comandi per la gestione utenti, gruppi e IA. Spiega gentilmente se esiste già o conferma l'inoltro.`,
+                            });
+                            break;
+                        } catch (err) {
+                            tentativi--;
+                            if (tentativi === 0) throw err;
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    }
                     
                     if (response && response.text) {
                         rispostaAi = response.text;
