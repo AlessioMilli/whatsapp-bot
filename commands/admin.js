@@ -253,7 +253,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     await sock.sendMessage(chatJid, { text: `🌍 *Risultato Web*:\n${responseText}` }, { quoted: m });
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
-                    await sock.sendMessage(chatJid, { text: `❌ I server sono molto occupati in questo momento. Riprova tra qualche istante!` }, { quoted: m });
+                    await sock.sendMessage(chatJid, { text: `❌ I server sono troppo occupati (Errore 503). Riprova tra qualche secondo!` }, { quoted: m });
                 }
                 return true;
             }
