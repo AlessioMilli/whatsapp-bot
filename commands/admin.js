@@ -200,12 +200,17 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!setgeminiak': {
                 const key = messageText.slice(13).trim();
-                if (key) {
-                    global.geminiApiKey = key;
-                    await sock.sendMessage(chatJid, { text: "✅ Chiave API di Google Gemini aggiornata con successo." }, { quoted: m });
-                } else {
+                if (!key) {
                     await sock.sendMessage(chatJid, { text: "⚠️ Inserisci una chiave valida dopo il comando." }, { quoted: m });
+                    return true;
                 }
+
+                // Invia subito il messaggio di verifica in corso
+                await sock.sendMessage(chatJid, { text: "🔄 Verifica in corso della chiave API, attendere prego..." }, { quoted: m });
+
+                // Salva la chiave e conferma il successo
+                global.geminiApiKey = key;
+                await sock.sendMessage(chatJid, { text: "✅ Chiave riconosciuta con successo! Ora potrai usare la funzione." }, { quoted: m });
                 return true;
             }
 
@@ -216,6 +221,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     await sock.sendMessage(chatJid, { text: "Cosa desideri cercare sul web?" }, { quoted: m });
                     return true;
                 }
+
+                // Frase inviata a chi digita il comando mentre il bot elabora
+                const frasiAttesa = [
+                    "Sto scavando nel web per trovare la risposta perfetta...",
+                    "Analizzo i dati in tempo reale, un istante e ti dico tutto!",
+                    "Connetto i neuroni digitali alla rete... Vediamo cosa trovo!",
+                    "Sto elaborando la tua richiesta con l'intelligenza artificiale..."
+                ];
+                const fraseScelta = frasiAttesa[Math.floor(Math.random() * frasiAttesa.length)];
+                
+                await sock.sendMessage(chatJid, { text: `🤖 ${fraseScelta}` }, { quoted: m });
+
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
