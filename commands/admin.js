@@ -233,8 +233,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-1.5-flash',
-                        contents: [{ role: 'user', parts: [{ text: query }] }],
+                        model: 'gemini-2.5-flash',
+                        contents: query,
                     });
                     
                     const responseText = response.text || (response.candidates && response.candidates[0]?.content?.parts[0]?.text) || "Nessuna risposta generata.";
@@ -258,8 +258,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-1.5-flash',
-                        contents: [{ role: 'user', parts: [{ text: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". Tieni conto che il bot ha già comandi per la gestione utenti, gruppi e IA. Spiega gentilmente se esiste già o conferma l'inoltro.` }] }],
+                        model: 'gemini-2.5-flash',
+                        contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". Tieni conto che il bot ha già comandi per la gestione utenti, gruppi e IA. Spiega gentilmente se esiste già o conferma l'inoltro.`,
                     });
                     
                     if (response && response.text) {
