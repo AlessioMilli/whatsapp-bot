@@ -148,7 +148,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             const now = Date.now();
             const lastTime = cooldowns.get(sender) || 0;
             if (now - lastTime < groupSettings.cooldownTime) {
-                return true; // Ignora se in cooldown
+                return true;
             }
             cooldowns.set(sender, now);
         }
@@ -227,6 +227,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 📌 Intelligenza Artificiale & Web:
 !web [domanda] / !cerca [domanda]* - Naviga sul web tramite le API di Google Gemini
 !setgeminiak [chiave]* - Imposta la chiave API di Google Gemini (Solo Proprietario)
+!chiedialessio [messaggio]* - Invia un messaggio o una domanda direttamente al proprietario in privata
+!aiutoalessio* - Mostra il messaggio di supporto e aiuto del gruppo
 
 📌 Gruppo & Sicurezza:
 !tagall / !tutti* - Manda un avviso a tutti
@@ -469,7 +471,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 2: INTELLIGENZA ARTIFICIALE & WEB ---
+            // --- SEZIONE 2: INTELLIGENZA ARTIFICIALE, WEB & SUPPORTO ---
             case '!web':
             case '!cerca': {
                 const query = messageText.replace(/^!(web|cerca)/i, '').trim();
@@ -508,6 +510,39 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
                 global.geminiApiKey = key;
                 await sock.sendMessage(chatJid, { text: "✅ Chiave API di Google Gemini aggiornata con successo in memoria!" });
+                return true;
+            }
+
+            case '!chiedialessio': {
+                const query = messageText.replace(/^!chiedialessio/i, '').trim();
+                if (!query) {
+                    await sock.sendMessage(chatJid, { 
+                        text: "🤖 Ciao! Per chiedere supporto o inviare un messaggio ad Alessio, scrivi la richiesta subito dopo il comando, es: !chiedialessio [tua richiesta]" 
+                    });
+                    return true;
+                }
+
+                await sock.sendMessage(chatJid, { text: "🤖 Richiesta inviata ad Alessio con successo!" });
+
+                if (!m.key.fromMe) {
+                    let groupName = "Chat Privata";
+                    if (isGroup) {
+                        try {
+                            const metadata = await sock.groupMetadata(chatJid);
+                            groupName = metadata.subject || chatJid;
+                        } catch (e) {}
+                    }
+                    const userName = m.pushName || sender.split('@')[0];
+                    const notifica = `🚨 *Nuova richiesta di supporto!*\n\n👤 Utente: ${userName} (${sender.split('@')[0]})\n🏠 Provenienza: ${groupName}\n💬 Messaggio: "${query}"`;
+                    await sock.sendMessage(OWNER_JID, { text: notifica });
+                }
+                return true;
+            }
+
+            case '!aiutoalessio': {
+                await sock.sendMessage(chatJid, { 
+                    text: "🤖 ℹ️ Centro Assistenza & Contatto Alessio: Benvenuto! Se hai bisogno di metterti in contatto con Alessio o richiedere supporto, puoi digitare il comando !chiedialessio [il tuo messaggio] oppure scrivergli direttamente. Il bot è qui per aiutarti a inoltrare qualsiasi segnalazione in modo semplice e veloce!" 
+                });
                 return true;
             }
 
