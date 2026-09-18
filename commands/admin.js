@@ -233,7 +233,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
+                        model: 'gemini-3.6-flash',
                         contents: query,
                     });
                     
@@ -258,7 +258,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
+                        model: 'gemini-3.6-flash',
                         contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". Tieni conto che il bot ha già comandi per la gestione utenti, gruppi e IA. Spiega gentilmente se esiste già o conferma l'inoltro.`,
                     });
                     
