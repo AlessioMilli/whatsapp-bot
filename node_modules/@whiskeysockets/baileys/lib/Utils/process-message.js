@@ -1,12 +1,10 @@
-import { Boom } from '@hapi/boom';
 import { proto } from '../../WAProto/index.js';
 import { WAMessageStubType } from '../Types/index.js';
 import { getContentType, normalizeMessageContent } from '../Utils/messages.js';
-import { areJidsSameUser, isHostedLidUser, isHostedPnUser, isJidBroadcast, isJidStatusBroadcast, isLidUser, jidDecode, jidEncode, jidNormalizedUser } from '../WABinary/index.js';
+import { areJidsSameUser, isJidBroadcast, isJidStatusBroadcast, jidNormalizedUser } from '../WABinary/index.js';
 import { aesDecryptGCM, hmacSign } from './crypto.js';
-import { getKeyAuthor, toNumber } from './generics.js';
+import { toNumber } from './generics.js';
 import { downloadAndProcessHistorySyncNotification } from './history.js';
-import { buildMergedTcTokenIndexWrite, resolveTcTokenJid } from './tc-token-utils.js';
 const REAL_MSG_STUB_TYPES = new Set([
     WAMessageStubType.CALL_MISSED_GROUP_VIDEO,
     WAMessageStubType.CALL_MISSED_GROUP_VOICE,
@@ -14,68 +12,11 @@ const REAL_MSG_STUB_TYPES = new Set([
     WAMessageStubType.CALL_MISSED_VOICE
 ]);
 const REAL_MSG_REQ_ME_STUB_TYPES = new Set([WAMessageStubType.GROUP_PARTICIPANT_ADD]);
-async function storeTcTokensFromHistorySync(chats, signalRepository, keyStore, logger) {
-    const getLIDForPN = signalRepository.lidMapping.getLIDForPN.bind(signalRepository.lidMapping);
-    const candidates = [];
-    for (const chat of chats) {
-        const ts = chat.tcTokenTimestamp ? toNumber(chat.tcTokenTimestamp) : 0;
-        if (chat.tcToken?.length && ts > 0) {
-            const jid = jidNormalizedUser(chat.id);
-            const storageJid = await resolveTcTokenJid(jid, getLIDForPN);
-            candidates.push({
-                storageJid,
-                token: Buffer.from(chat.tcToken),
-                ts,
-                senderTs: chat.tcTokenSenderTimestamp ? toNumber(chat.tcTokenSenderTimestamp) : undefined
-            });
-        }
-    }
-    if (!candidates.length) {
-        return;
-    }
-    const jids = candidates.map(c => c.storageJid);
-    const existing = await keyStore.get('tctoken', jids);
-    const entries = {};
-    for (const c of candidates) {
-        const existingEntry = existing[c.storageJid];
-        const existingTs = existingEntry?.timestamp ? Number(existingEntry.timestamp) : 0;
-        if (existingTs > 0 && existingTs >= c.ts) {
-            continue;
-        }
-        entries[c.storageJid] = {
-            ...existingEntry,
-            token: c.token,
-            timestamp: String(c.ts),
-            ...(c.senderTs !== undefined ? { senderTimestamp: c.senderTs } : {})
-        };
-    }
-    if (Object.keys(entries).length) {
-        logger?.debug({ count: Object.keys(entries).length }, 'storing tctokens from history sync');
-        try {
-            // Include updated __index so cross-session pruning picks these JIDs up.
-            const indexWrite = await buildMergedTcTokenIndexWrite(keyStore, Object.keys(entries));
-            await keyStore.set({ tctoken: { ...entries, ...indexWrite } });
-        }
-        catch (err) {
-            logger?.warn({ err }, 'failed to store tctokens from history sync');
-        }
-    }
-}
 /** Cleans a received message to further processing */
-export const cleanMessage = (message, meId, meLid) => {
+export const cleanMessage = (message, meId) => {
     // ensure remoteJid and participant doesn't have device or agent in it
-    if (isHostedPnUser(message.key.remoteJid) || isHostedLidUser(message.key.remoteJid)) {
-        message.key.remoteJid = jidEncode(jidDecode(message.key?.remoteJid)?.user, isHostedPnUser(message.key.remoteJid) ? 's.whatsapp.net' : 'lid');
-    }
-    else {
-        message.key.remoteJid = jidNormalizedUser(message.key.remoteJid);
-    }
-    if (isHostedPnUser(message.key.participant) || isHostedLidUser(message.key.participant)) {
-        message.key.participant = jidEncode(jidDecode(message.key.participant)?.user, isHostedPnUser(message.key.participant) ? 's.whatsapp.net' : 'lid');
-    }
-    else {
-        message.key.participant = jidNormalizedUser(message.key.participant);
-    }
+    message.key.remoteJid = jidNormalizedUser(message.key.remoteJid);
+    message.key.participant = message.key.participant ? jidNormalizedUser(message.key.participant) : undefined;
     const content = normalizeMessageContent(message.message);
     // if the message has a reaction, ensure fromMe & remoteJid are from our perspective
     if (content?.reactionMessage) {
@@ -91,26 +32,24 @@ export const cleanMessage = (message, meId, meLid) => {
             // if the sender believed the message being reacted to is not from them
             // we've to correct the key to be from them, or some other participant
             msgKey.fromMe = !msgKey.fromMe
-                ? areJidsSameUser(msgKey.participant || msgKey.remoteJid, meId) ||
-                    areJidsSameUser(msgKey.participant || msgKey.remoteJid, meLid)
+                ? areJidsSameUser(msgKey.participant || msgKey.remoteJid, meId)
                 : // if the message being reacted to, was from them
                     // fromMe automatically becomes false
                     false;
             // set the remoteJid to being the same as the chat the message came from
-            // TODO: investigate inconsistencies
             msgKey.remoteJid = message.key.remoteJid;
             // set participant of the message
             msgKey.participant = msgKey.participant || message.key.participant;
         }
     }
 };
-// TODO: target:audit AUDIT THIS FUNCTION AGAIN
-export const isRealMessage = (message) => {
+export const isRealMessage = (message, meId) => {
     const normalizedContent = normalizeMessageContent(message.message);
     const hasSomeContent = !!getContentType(normalizedContent);
     return ((!!normalizedContent ||
         REAL_MSG_STUB_TYPES.has(message.messageStubType) ||
-        REAL_MSG_REQ_ME_STUB_TYPES.has(message.messageStubType)) &&
+        (REAL_MSG_REQ_ME_STUB_TYPES.has(message.messageStubType) &&
+            message.messageStubParameters?.some(p => areJidsSameUser(meId, p)))) &&
         hasSomeContent &&
         !normalizedContent?.protocolMessage &&
         !normalizedContent?.reactionMessage &&
@@ -122,17 +61,7 @@ export const shouldIncrementChatUnread = (message) => !message.key.fromMe && !me
  * Typically -- that'll be the remoteJid, but for broadcasts, it'll be the participant
  */
 export const getChatId = ({ remoteJid, participant, fromMe }) => {
-    if (!remoteJid) {
-        throw new Boom('Cannot derive chat id: message key is missing remoteJid', {
-            data: { remoteJid, participant, fromMe }
-        });
-    }
     if (isJidBroadcast(remoteJid) && !isJidStatusBroadcast(remoteJid) && !fromMe) {
-        if (!participant) {
-            throw new Boom('Cannot derive chat id: broadcast message key is missing participant', {
-                data: { remoteJid, fromMe }
-            });
-        }
         return participant;
     }
     return remoteJid;
@@ -160,34 +89,11 @@ export function decryptPollVote({ encPayload, encIv }, { pollCreatorJid, pollMsg
         return Buffer.from(txt);
     }
 }
-/**
- * Decrypt an event response
- * @param response encrypted event response
- * @param ctx additional info about the event required for decryption
- * @returns event response message
- */
-export function decryptEventResponse({ encPayload, encIv }, { eventCreatorJid, eventMsgId, eventEncKey, responderJid }) {
-    const sign = Buffer.concat([
-        toBinary(eventMsgId),
-        toBinary(eventCreatorJid),
-        toBinary(responderJid),
-        toBinary('Event Response'),
-        new Uint8Array([1])
-    ]);
-    const key0 = hmacSign(eventEncKey, new Uint8Array(32), 'sha256');
-    const decKey = hmacSign(sign, key0, 'sha256');
-    const aad = toBinary(`${eventMsgId}\u0000${responderJid}`);
-    const decrypted = aesDecryptGCM(encPayload, decKey, encIv, aad);
-    return proto.Message.EventResponseMessage.decode(decrypted);
-    function toBinary(txt) {
-        return Buffer.from(txt);
-    }
-}
-const processMessage = async (message, { shouldProcessHistoryMsg, placeholderResendCache, ev, creds, signalRepository, keyStore, logger, options, getMessage }) => {
+const processMessage = async (message, { shouldProcessHistoryMsg, placeholderResendCache, ev, creds, keyStore, logger, options }) => {
     const meId = creds.me.id;
     const { accountSettings } = creds;
     const chat = { id: jidNormalizedUser(getChatId(message.key)) };
-    const isRealMsg = isRealMessage(message);
+    const isRealMsg = isRealMessage(message, meId);
     if (isRealMsg) {
         chat.messages = [{ message }];
         chat.conversationTimestamp = toNumber(message.messageTimestamp);
@@ -250,7 +156,6 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
                     isLatest
                 }, 'got history notification');
                 if (process) {
-                    // TODO: investigate
                     if (histNotification.syncType !== proto.HistorySync.HistorySyncType.ON_DEMAND) {
                         ev.emit('creds.update', {
                             processedHistoryMessages: [
@@ -259,18 +164,10 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
                             ]
                         });
                     }
-                    const data = await downloadAndProcessHistorySyncNotification(histNotification, options, logger);
-                    if (data.lidPnMappings?.length) {
-                        logger?.debug({ count: data.lidPnMappings.length }, 'processing LID-PN mappings from history sync');
-                        await signalRepository.lidMapping
-                            .storeLIDPNMappings(data.lidPnMappings)
-                            .catch(err => logger?.warn({ err }, 'failed to store LID-PN mappings from history sync'));
-                    }
-                    await storeTcTokensFromHistorySync(data.chats, signalRepository, keyStore, logger);
+                    const data = await downloadAndProcessHistorySyncNotification(histNotification, options);
                     ev.emit('messaging-history.set', {
                         ...data,
                         isLatest: histNotification.syncType !== proto.HistorySync.HistorySyncType.ON_DEMAND ? isLatest : undefined,
-                        chunkOrder: histNotification.chunkOrder,
                         peerDataRequestSessionId: histNotification.peerDataRequestSessionId
                     });
                 }
@@ -288,7 +185,7 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
                             newAppStateSyncKeyId = strKeyId;
                         }
                         logger?.info({ newAppStateSyncKeyId, newKeys }, 'injecting new app state sync keys');
-                    }, meId);
+                    });
                     ev.emit('creds.update', { myAppStateKeyId: newAppStateSyncKeyId });
                 }
                 else {
@@ -315,48 +212,22 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
             case proto.Message.ProtocolMessage.Type.PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE:
                 const response = protocolMsg.peerDataOperationRequestResponseMessage;
                 if (response) {
+                    placeholderResendCache?.del(response.stanzaId);
                     // TODO: IMPLEMENT HISTORY SYNC ETC (sticker uploads etc.).
-                    const peerDataOperationResult = response.peerDataOperationResult || [];
+                    const { peerDataOperationResult } = response;
                     for (const result of peerDataOperationResult) {
-                        const retryResponse = result?.placeholderMessageResendResponse;
+                        const { placeholderMessageResendResponse: retryResponse } = result;
                         //eslint-disable-next-line max-depth
-                        if (!retryResponse?.webMessageInfoBytes) {
-                            continue;
-                        }
-                        //eslint-disable-next-line max-depth
-                        try {
+                        if (retryResponse) {
                             const webMessageInfo = proto.WebMessageInfo.decode(retryResponse.webMessageInfoBytes);
-                            const msgId = webMessageInfo.key?.id;
-                            // Retrieve cached original message data (preserves LID details,
-                            // timestamps, etc. that the phone may omit in its PDO response)
-                            const cachedData = msgId ? await placeholderResendCache?.get(msgId) : undefined;
-                            //eslint-disable-next-line max-depth
-                            if (msgId) {
-                                await placeholderResendCache?.del(msgId);
-                            }
-                            let finalMsg;
-                            //eslint-disable-next-line max-depth
-                            if (cachedData && typeof cachedData === 'object') {
-                                // Apply decoded message content onto cached metadata (preserves LID etc.)
-                                cachedData.message = webMessageInfo.message;
-                                //eslint-disable-next-line max-depth
-                                if (webMessageInfo.messageTimestamp) {
-                                    cachedData.messageTimestamp = webMessageInfo.messageTimestamp;
-                                }
-                                finalMsg = cachedData;
-                            }
-                            else {
-                                finalMsg = webMessageInfo;
-                            }
-                            logger?.debug({ msgId, requestId: response.stanzaId }, 'received placeholder resend');
-                            ev.emit('messages.upsert', {
-                                messages: [finalMsg],
-                                type: 'notify',
-                                requestId: response.stanzaId
-                            });
-                        }
-                        catch (err) {
-                            logger?.warn({ err, stanzaId: response.stanzaId }, 'failed to decode placeholder resend response');
+                            // wait till another upsert event is available, don't want it to be part of the PDO response message
+                            setTimeout(() => {
+                                ev.emit('messages.upsert', {
+                                    messages: [webMessageInfo],
+                                    type: 'notify',
+                                    requestId: response.stanzaId
+                                });
+                            }, 500);
                         }
                     }
                 }
@@ -379,33 +250,6 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
                     }
                 ]);
                 break;
-            case proto.Message.ProtocolMessage.Type.GROUP_MEMBER_LABEL_CHANGE:
-                const labelAssociationMsg = protocolMsg.memberLabel;
-                if (labelAssociationMsg?.label) {
-                    ev.emit('group.member-tag.update', {
-                        groupId: chat.id,
-                        label: labelAssociationMsg.label,
-                        participant: message.key.participant,
-                        participantAlt: message.key.participantAlt,
-                        messageTimestamp: Number(message.messageTimestamp)
-                    });
-                }
-                break;
-            case proto.Message.ProtocolMessage.Type.LID_MIGRATION_MAPPING_SYNC:
-                const encodedPayload = protocolMsg.lidMigrationMappingSyncMessage?.encodedMappingPayload;
-                const { pnToLidMappings, chatDbMigrationTimestamp } = proto.LIDMigrationMappingSyncPayload.decode(encodedPayload);
-                logger?.debug({ pnToLidMappings, chatDbMigrationTimestamp }, 'got lid mappings and chat db migration timestamp');
-                const pairs = [];
-                for (const { pn, latestLid, assignedLid } of pnToLidMappings) {
-                    const lid = latestLid || assignedLid;
-                    pairs.push({ lid: `${lid}@lid`, pn: `${pn}@s.whatsapp.net` });
-                }
-                await signalRepository.lidMapping.storeLIDPNMappings(pairs);
-                if (pairs.length) {
-                    for (const { pn, lid } of pairs) {
-                        await signalRepository.migrateSession(pn, lid);
-                    }
-                }
         }
     }
     else if (content?.reactionMessage) {
@@ -420,99 +264,26 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
             }
         ]);
     }
-    else if (content?.encEventResponseMessage) {
-        const encEventResponse = content.encEventResponseMessage;
-        const creationMsgKey = encEventResponse.eventCreationMessageKey;
-        // we need to fetch the event creation message to get the event enc key
-        const eventMsg = await getMessage(creationMsgKey);
-        if (eventMsg) {
-            try {
-                const meIdNormalised = jidNormalizedUser(meId);
-                // all jids need to be PN
-                const eventCreatorKey = creationMsgKey.participant || creationMsgKey.remoteJid;
-                const eventCreatorPn = isLidUser(eventCreatorKey)
-                    ? await signalRepository.lidMapping.getPNForLID(eventCreatorKey)
-                    : eventCreatorKey;
-                const eventCreatorJid = getKeyAuthor({ remoteJid: jidNormalizedUser(eventCreatorPn), fromMe: meIdNormalised === eventCreatorPn }, meIdNormalised);
-                const responderJid = getKeyAuthor(message.key, meIdNormalised);
-                const eventEncKey = eventMsg?.messageContextInfo?.messageSecret;
-                if (!eventEncKey) {
-                    logger?.warn({ creationMsgKey }, 'event response: missing messageSecret for decryption');
-                }
-                else {
-                    const responseMsg = decryptEventResponse(encEventResponse, {
-                        eventEncKey,
-                        eventCreatorJid,
-                        eventMsgId: creationMsgKey.id,
-                        responderJid
-                    });
-                    const eventResponse = {
-                        eventResponseMessageKey: message.key,
-                        senderTimestampMs: responseMsg.timestampMs,
-                        response: responseMsg
-                    };
-                    ev.emit('messages.update', [
-                        {
-                            key: creationMsgKey,
-                            update: {
-                                eventResponses: [eventResponse]
-                            }
-                        }
-                    ]);
-                }
-            }
-            catch (err) {
-                logger?.warn({ err, creationMsgKey }, 'failed to decrypt event response');
-            }
-        }
-        else {
-            logger?.warn({ creationMsgKey }, 'event creation message not found, cannot decrypt response');
-        }
-    }
     else if (message.messageStubType) {
         const jid = message.key?.remoteJid;
         //let actor = whatsappID (message.participant)
         let participants;
-        const emitParticipantsUpdate = (action) => ev.emit('group-participants.update', {
-            id: jid,
-            author: message.key.participant,
-            authorPn: message.key.participantAlt,
-            authorUsername: message.key.participantUsername,
-            participants,
-            action
-        });
+        const emitParticipantsUpdate = (action) => ev.emit('group-participants.update', { id: jid, author: message.participant, participants, action });
         const emitGroupUpdate = (update) => {
-            ev.emit('groups.update', [
-                {
-                    id: jid,
-                    ...update,
-                    author: message.key.participant ?? undefined,
-                    authorPn: message.key.participantAlt,
-                    authorUsername: message.key.participantUsername
-                }
-            ]);
+            ev.emit('groups.update', [{ id: jid, ...update, author: message.participant ?? undefined }]);
         };
         const emitGroupRequestJoin = (participant, action, method) => {
-            ev.emit('group.join-request', {
-                id: jid,
-                author: message.key.participant,
-                authorPn: message.key.participantAlt,
-                authorUsername: message.key.participantUsername,
-                participant: participant.lid,
-                participantPn: participant.pn,
-                action,
-                method: method
-            });
+            ev.emit('group.join-request', { id: jid, author: message.participant, participant, action, method: method });
         };
-        const participantsIncludesMe = () => participants.find(jid => areJidsSameUser(meId, jid.phoneNumber)); // ADD SUPPORT FOR LID
+        const participantsIncludesMe = () => participants.find(jid => areJidsSameUser(meId, jid));
         switch (message.messageStubType) {
             case WAMessageStubType.GROUP_PARTICIPANT_CHANGE_NUMBER:
-                participants = message.messageStubParameters.map((a) => JSON.parse(a)) || [];
+                participants = message.messageStubParameters || [];
                 emitParticipantsUpdate('modify');
                 break;
             case WAMessageStubType.GROUP_PARTICIPANT_LEAVE:
             case WAMessageStubType.GROUP_PARTICIPANT_REMOVE:
-                participants = message.messageStubParameters.map((a) => JSON.parse(a)) || [];
+                participants = message.messageStubParameters || [];
                 emitParticipantsUpdate('remove');
                 // mark the chat read only if you left the group
                 if (participantsIncludesMe()) {
@@ -522,18 +293,18 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
             case WAMessageStubType.GROUP_PARTICIPANT_ADD:
             case WAMessageStubType.GROUP_PARTICIPANT_INVITE:
             case WAMessageStubType.GROUP_PARTICIPANT_ADD_REQUEST_JOIN:
-                participants = message.messageStubParameters.map((a) => JSON.parse(a)) || [];
+                participants = message.messageStubParameters || [];
                 if (participantsIncludesMe()) {
                     chat.readOnly = false;
                 }
                 emitParticipantsUpdate('add');
                 break;
             case WAMessageStubType.GROUP_PARTICIPANT_DEMOTE:
-                participants = message.messageStubParameters.map((a) => JSON.parse(a)) || [];
+                participants = message.messageStubParameters || [];
                 emitParticipantsUpdate('demote');
                 break;
             case WAMessageStubType.GROUP_PARTICIPANT_PROMOTE:
-                participants = message.messageStubParameters.map((a) => JSON.parse(a)) || [];
+                participants = message.messageStubParameters || [];
                 emitParticipantsUpdate('promote');
                 break;
             case WAMessageStubType.GROUP_CHANGE_ANNOUNCE:
@@ -566,8 +337,8 @@ const processMessage = async (message, { shouldProcessHistoryMsg, placeholderRes
                 const approvalMode = message.messageStubParameters?.[0];
                 emitGroupUpdate({ joinApprovalMode: approvalMode === 'on' });
                 break;
-            case WAMessageStubType.GROUP_MEMBERSHIP_JOIN_APPROVAL_REQUEST_NON_ADMIN_ADD: // TODO: Add other events
-                const participant = JSON.parse(message.messageStubParameters?.[0]);
+            case WAMessageStubType.GROUP_MEMBERSHIP_JOIN_APPROVAL_REQUEST_NON_ADMIN_ADD:
+                const participant = message.messageStubParameters?.[0];
                 const action = message.messageStubParameters?.[1];
                 const method = message.messageStubParameters?.[2];
                 emitGroupRequestJoin(participant, action, method);

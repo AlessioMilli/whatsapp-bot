@@ -9,7 +9,7 @@ export * from './Events.js';
 export * from './Product.js';
 export * from './Call.js';
 export * from './Signal.js';
-export * from './Mex.js';
+export * from './Newsletter.js';
 import type { AuthenticationState } from './Auth.js';
 import type { SocketConfig } from './Socket.js';
 export type UserFacingSocketConfig = Partial<SocketConfig> & {
@@ -20,7 +20,6 @@ export type BrowsersMap = {
     macOS(browser: string): [string, string, string];
     baileys(browser: string): [string, string, string];
     windows(browser: string): [string, string, string];
-    android(browser: string): [string, string, string];
     appropriate(browser: string): [string, string, string];
 };
 export declare enum DisconnectReason {

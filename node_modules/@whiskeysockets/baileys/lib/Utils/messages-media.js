@@ -1,4 +1,5 @@
 import { Boom } from '@hapi/boom';
+import axios, {} from 'axios';
 import { exec } from 'child_process';
 import * as Crypto from 'crypto';
 import { once } from 'events';
@@ -75,7 +76,7 @@ export async function getMediaKeys(buffer, mediaType) {
         buffer = Buffer.from(buffer.replace('data:;base64,', ''), 'base64');
     }
     // expand using HKDF to 112 bytes, also pass in the relevant app info
-    const expandedMediaKey = hkdf(buffer, 112, { info: hkdfInfoKey(mediaType) });
+    const expandedMediaKey = await hkdf(buffer, 112, { info: hkdfInfoKey(mediaType) });
     return {
         iv: expandedMediaKey.slice(0, 16),
         cipherKey: expandedMediaKey.slice(16, 48),
@@ -155,7 +156,7 @@ export const generateProfilePicture = async (mediaUpload, dimensions) => {
         })
             .toBuffer();
     }
-    else if ('jimp' in lib && typeof lib.jimp?.Jimp === 'function') {
+    else if ('jimp' in lib && typeof lib.jimp?.Jimp === 'object') {
         const jimp = await lib.jimp.Jimp.read(buffer);
         const min = Math.min(jimp.width, jimp.height);
         const cropped = jimp.crop({ x: 0, y: 0, w: min, h: min });
@@ -295,16 +296,8 @@ export async function generateThumbnail(file, mediaType, options) {
     };
 }
 export const getHttpStream = async (url, options = {}) => {
-    const response = await fetch(url.toString(), {
-        dispatcher: options.dispatcher,
-        method: 'GET',
-        headers: options.headers
-    });
-    if (!response.ok) {
-        throw new Boom(`Failed to fetch stream from ${url}`, { statusCode: response.status, data: { url } });
-    }
-    // @ts-ignore Node18+ Readable.fromWeb exists
-    return response.body instanceof Readable ? response.body : Readable.fromWeb(response.body);
+    const fetched = await axios.get(url.toString(), { ...options, responseType: 'stream' });
+    return fetched.data;
 };
 export const encryptedStream = async (media, mediaType, { logger, saveOriginalFileIfRequired, opts } = {}) => {
     const { stream, type } = await getStream(media, opts);
@@ -324,20 +317,15 @@ export const encryptedStream = async (media, mediaType, { logger, saveOriginalFi
     const hmac = Crypto.createHmac('sha256', macKey).update(iv);
     const sha256Plain = Crypto.createHash('sha256');
     const sha256Enc = Crypto.createHash('sha256');
-    const onChunk = async (buff) => {
+    const onChunk = (buff) => {
         sha256Enc.update(buff);
         hmac.update(buff);
-        // Handle backpressure: if write returns false, wait for drain
-        if (!encFileWriteStream.write(buff)) {
-            await once(encFileWriteStream, 'drain');
-        }
+        encFileWriteStream.write(buff);
     };
     try {
         for await (const data of stream) {
             fileLength += data.length;
-            if (type === 'remote' &&
-                opts?.maxContentLength &&
-                fileLength + data.length > opts.maxContentLength) {
+            if (type === 'remote' && opts?.maxContentLength && fileLength + data.length > opts.maxContentLength) {
                 throw new Boom(`content length exceeded when encrypting "${type}"`, {
                     data: { media, type }
                 });
@@ -348,23 +336,17 @@ export const encryptedStream = async (media, mediaType, { logger, saveOriginalFi
                 }
             }
             sha256Plain.update(data);
-            await onChunk(aes.update(data));
+            onChunk(aes.update(data));
         }
-        await onChunk(aes.final());
+        onChunk(aes.final());
         const mac = hmac.digest().slice(0, 10);
         sha256Enc.update(mac);
         const fileSha256 = sha256Plain.digest();
         const fileEncSha256 = sha256Enc.digest();
         encFileWriteStream.write(mac);
-        const encFinishPromise = once(encFileWriteStream, 'finish');
-        const originalFinishPromise = originalFileStream ? once(originalFileStream, 'finish') : Promise.resolve();
         encFileWriteStream.end();
         originalFileStream?.end?.();
         stream.destroy();
-        // Wait for write streams to fully flush to disk
-        // This helps reduce memory pressure by allowing OS to release buffers
-        await encFinishPromise;
-        await originalFinishPromise;
         logger?.debug('encrypted data successfully');
         return {
             mediaKey,
@@ -397,27 +379,15 @@ export const encryptedStream = async (media, mediaType, { logger, saveOriginalFi
         throw error;
     }
 };
-export const DEF_MEDIA_HOST = 'mmg.whatsapp.net';
+const DEF_HOST = 'mmg.whatsapp.net';
 const AES_CHUNK_SIZE = 16;
 const toSmallestChunkSize = (num) => {
     return Math.floor(num / AES_CHUNK_SIZE) * AES_CHUNK_SIZE;
 };
-export const getUrlFromDirectPath = (directPath, host = DEF_MEDIA_HOST) => `https://${host}${directPath}`;
-const extractHost = (url) => {
-    if (!url)
-        return undefined;
-    try {
-        return new URL(url).host;
-    }
-    catch {
-        return undefined;
-    }
-};
+export const getUrlFromDirectPath = (directPath) => `https://${DEF_HOST}${directPath}`;
 export const downloadContentFromMessage = async ({ mediaKey, directPath, url }, type, opts = {}) => {
-    // Fallback host: explicit opt > host parsed from `url` > DEF_MEDIA_HOST.
-    // Lets us honor a non-default host carried by the proto without forcing callers to thread it through.
-    const fallbackHost = opts.host ?? extractHost(url);
-    const downloadUrl = directPath ? getUrlFromDirectPath(directPath, fallbackHost) : url;
+    const isValidMediaUrl = url?.startsWith('https://mmg.whatsapp.net/');
+    const downloadUrl = isValidMediaUrl ? url : getUrlFromDirectPath(directPath);
     if (!downloadUrl) {
         throw new Boom('No valid media URL or directPath present in message', { statusCode: 400 });
     }
@@ -442,13 +412,8 @@ export const downloadEncryptedContent = async (downloadUrl, { cipherKey, iv }, {
         }
     }
     const endChunk = endByte ? toSmallestChunkSize(endByte || 0) + AES_CHUNK_SIZE : undefined;
-    const headersInit = options?.headers ? options.headers : undefined;
     const headers = {
-        ...(headersInit
-            ? Array.isArray(headersInit)
-                ? Object.fromEntries(headersInit)
-                : headersInit
-            : {}),
+        ...(options?.headers || {}),
         Origin: DEFAULT_ORIGIN
     };
     if (startChunk || endChunk) {
@@ -460,7 +425,9 @@ export const downloadEncryptedContent = async (downloadUrl, { cipherKey, iv }, {
     // download the message
     const fetched = await getHttpStream(downloadUrl, {
         ...(options || {}),
-        headers
+        headers,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
     });
     let remainingBytes = Buffer.from([]);
     let aes;
@@ -477,7 +444,7 @@ export const downloadEncryptedContent = async (downloadUrl, { cipherKey, iv }, {
     };
     const output = new Transform({
         transform(chunk, _, callback) {
-            let data = remainingBytes.length ? Buffer.concat([remainingBytes, chunk]) : chunk;
+            let data = Buffer.concat([remainingBytes, chunk]);
             const decryptLength = toSmallestChunkSize(data.length);
             remainingBytes = data.slice(decryptLength);
             data = data.slice(0, decryptLength);
@@ -527,119 +494,6 @@ export function extensionForMediaMessage(message) {
     }
     return extension;
 }
-const isNodeRuntime = () => {
-    return (typeof process !== 'undefined' &&
-        process.versions?.node !== null &&
-        typeof process.versions.bun === 'undefined' &&
-        typeof globalThis.Deno === 'undefined');
-};
-export const uploadWithNodeHttp = async ({ url, filePath, headers, timeoutMs, agent }, redirectCount = 0) => {
-    if (redirectCount > 5) {
-        throw new Error('Too many redirects');
-    }
-    const parsedUrl = new URL(url);
-    const httpModule = parsedUrl.protocol === 'https:' ? await import('https') : await import('http');
-    // Get file size for Content-Length header (required for Node.js streaming)
-    const fileStats = await fs.stat(filePath);
-    const fileSize = fileStats.size;
-    return new Promise((resolve, reject) => {
-        const req = httpModule.request({
-            hostname: parsedUrl.hostname,
-            port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-            path: parsedUrl.pathname + parsedUrl.search,
-            method: 'POST',
-            headers: {
-                ...headers,
-                'Content-Length': fileSize
-            },
-            agent,
-            timeout: timeoutMs
-        }, res => {
-            // Handle redirects (3xx)
-            if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                res.resume(); // Consume response to free resources
-                const newUrl = new URL(res.headers.location, url).toString();
-                resolve(uploadWithNodeHttp({
-                    url: newUrl,
-                    filePath,
-                    headers,
-                    timeoutMs,
-                    agent
-                }, redirectCount + 1));
-                return;
-            }
-            let body = '';
-            res.on('data', chunk => (body += chunk));
-            res.on('end', () => {
-                try {
-                    resolve(JSON.parse(body));
-                }
-                catch {
-                    resolve(undefined);
-                }
-            });
-        });
-        req.on('error', reject);
-        req.on('timeout', () => {
-            req.destroy();
-            reject(new Error('Upload timeout'));
-        });
-        const stream = createReadStream(filePath);
-        stream.pipe(req);
-        stream.on('error', err => {
-            req.destroy();
-            reject(err);
-        });
-    });
-};
-const uploadWithFetch = async ({ url, filePath, headers, timeoutMs, agent }) => {
-    // Convert Node.js Readable to Web ReadableStream
-    const nodeStream = createReadStream(filePath);
-    const webStream = Readable.toWeb(nodeStream);
-    // Native fetch only accepts Undici-style dispatchers, not generic https Agents.
-    const dispatcher = typeof agent?.dispatch === 'function' ? agent : undefined;
-    const response = await fetch(url, {
-        ...(dispatcher ? { dispatcher } : {}),
-        method: 'POST',
-        body: webStream,
-        headers,
-        duplex: 'half',
-        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined
-    });
-    try {
-        return (await response.json());
-    }
-    catch {
-        return undefined;
-    }
-};
-/**
- * Uploads media to WhatsApp servers.
- *
- * ## Why we have two upload implementations:
- *
- * Node.js's native `fetch` (powered by undici) has a known bug where it buffers
- * the entire request body in memory before sending, even when using streams.
- * This causes memory issues with large files (e.g., 1GB file = 1GB+ memory usage).
- * See: https://github.com/nodejs/undici/issues/4058
- *
- * Other runtimes (Bun, Deno, browsers) correctly stream the request body without
- * buffering, so we can use the web-standard Fetch API there.
- *
- * ## Future considerations:
- * Once the undici bug is fixed, we can simplify this to use only the Fetch API
- * across all runtimes. Monitor the GitHub issue for updates.
- */
-const uploadMedia = async (params, logger) => {
-    if (isNodeRuntime()) {
-        logger?.debug('Using Node.js https module for upload (avoids undici buffering bug)');
-        return uploadWithNodeHttp(params);
-    }
-    else {
-        logger?.debug('Using web-standard Fetch API for upload');
-        return uploadWithFetch(params);
-    }
-};
 export const getWAUploadToServer = ({ customUploadHosts, fetchAgent, logger, options }, refreshMediaConn) => {
     return async (filePath, { mediaType, fileEncSha256B64, timeoutMs }) => {
         // send a query JSON to obtain the url & auth token to upload our media
@@ -647,38 +501,32 @@ export const getWAUploadToServer = ({ customUploadHosts, fetchAgent, logger, opt
         let urls;
         const hosts = [...customUploadHosts, ...uploadInfo.hosts];
         fileEncSha256B64 = encodeBase64EncodedStringForUpload(fileEncSha256B64);
-        // Prepare common headers
-        const customHeaders = (() => {
-            const hdrs = options?.headers;
-            if (!hdrs)
-                return {};
-            return Array.isArray(hdrs) ? Object.fromEntries(hdrs) : hdrs;
-        })();
-        const headers = {
-            ...customHeaders,
-            'Content-Type': 'application/octet-stream',
-            Origin: DEFAULT_ORIGIN
-        };
         for (const { hostname } of hosts) {
             logger.debug(`uploading to "${hostname}"`);
-            const auth = encodeURIComponent(uploadInfo.auth);
+            const auth = encodeURIComponent(uploadInfo.auth); // the auth token
             const url = `https://${hostname}${MEDIA_PATH_MAP[mediaType]}/${fileEncSha256B64}?auth=${auth}&token=${fileEncSha256B64}`;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let result;
             try {
-                result = await uploadMedia({
-                    url,
-                    filePath,
-                    headers,
-                    timeoutMs,
-                    agent: fetchAgent
-                }, logger);
-                if (result?.url || result?.direct_path) {
+                const body = await axios.post(url, createReadStream(filePath), {
+                    ...options,
+                    maxRedirects: 0,
+                    headers: {
+                        ...(options.headers || {}),
+                        'Content-Type': 'application/octet-stream',
+                        Origin: DEFAULT_ORIGIN
+                    },
+                    httpsAgent: fetchAgent,
+                    timeout: timeoutMs,
+                    responseType: 'json',
+                    maxBodyLength: Infinity,
+                    maxContentLength: Infinity
+                });
+                result = body.data;
+                if (result?.url || result?.directPath) {
                     urls = {
                         mediaUrl: result.url,
-                        directPath: result.direct_path,
-                        meta_hmac: result.meta_hmac,
-                        fbid: result.fbid,
-                        ts: result.ts
+                        directPath: result.direct_path
                     };
                     break;
                 }
@@ -688,8 +536,11 @@ export const getWAUploadToServer = ({ customUploadHosts, fetchAgent, logger, opt
                 }
             }
             catch (error) {
+                if (axios.isAxiosError(error)) {
+                    result = error.response?.data;
+                }
                 const isLast = hostname === hosts[uploadInfo.hosts.length - 1]?.hostname;
-                logger.warn({ trace: error?.stack, uploadResult: result }, `Error in uploading to ${hostname} ${isLast ? '' : ', retrying...'}`);
+                logger.warn({ trace: error.stack, uploadResult: result }, `Error in uploading to ${hostname} ${isLast ? '' : ', retrying...'}`);
             }
         }
         if (!urls) {
@@ -704,11 +555,11 @@ const getMediaRetryKey = (mediaKey) => {
 /**
  * Generate a binary node that will request the phone to re-upload the media & return the newly uploaded URL
  */
-export const encryptMediaRetryRequest = (key, mediaKey, meId) => {
+export const encryptMediaRetryRequest = async (key, mediaKey, meId) => {
     const recp = { stanzaId: key.id };
     const recpBuffer = proto.ServerErrorReceipt.encode(recp).finish();
     const iv = Crypto.randomBytes(12);
-    const retryKey = getMediaRetryKey(mediaKey);
+    const retryKey = await getMediaRetryKey(mediaKey);
     const ciphertext = aesEncryptGCM(recpBuffer, retryKey, iv, Buffer.from(key.id));
     const req = {
         tag: 'receipt',
@@ -773,8 +624,8 @@ export const decodeMediaRetryNode = (node) => {
     }
     return event;
 };
-export const decryptMediaRetryData = ({ ciphertext, iv }, mediaKey, msgId) => {
-    const retryKey = getMediaRetryKey(mediaKey);
+export const decryptMediaRetryData = async ({ ciphertext, iv }, mediaKey, msgId) => {
+    const retryKey = await getMediaRetryKey(mediaKey);
     const plaintext = aesDecryptGCM(ciphertext, retryKey, iv, Buffer.from(msgId));
     return proto.MediaRetryNotification.decode(plaintext);
 };

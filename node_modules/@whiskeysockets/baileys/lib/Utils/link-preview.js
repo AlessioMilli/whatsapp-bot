@@ -19,7 +19,7 @@ export const getUrlInfo = async (text, opts = {
 }) => {
     try {
         // retries
-        let retries = 0;
+        const retries = 0;
         const maxRetry = 5;
         const { getLinkPreview } = await import('link-preview-js');
         let previewLink = text;
@@ -38,14 +38,14 @@ export const getUrlInfo = async (text, opts = {
                 if (forwardedURLObj.hostname === urlObj.hostname ||
                     forwardedURLObj.hostname === 'www.' + urlObj.hostname ||
                     'www.' + forwardedURLObj.hostname === urlObj.hostname) {
-                    retries += 1;
+                    retries + 1;
                     return true;
                 }
                 else {
                     return false;
                 }
             },
-            headers: opts.fetchOpts?.headers
+            headers: opts.fetchOpts
         });
         if (info && 'title' in info && info.title) {
             const [image] = info.images;

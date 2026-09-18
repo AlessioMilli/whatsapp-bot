@@ -18,13 +18,12 @@ export declare class USyncQuery {
     withMode(mode: string): this;
     withContext(context: string): this;
     withUser(user: USyncUser): this;
-    parseUSyncQueryResult(result: BinaryNode | undefined): USyncQueryResult | undefined;
+    parseUSyncQueryResult(result: BinaryNode): USyncQueryResult | undefined;
     withDeviceProtocol(): this;
     withContactProtocol(): this;
     withStatusProtocol(): this;
     withDisappearingModeProtocol(): this;
     withBotProfileProtocol(): this;
     withLIDProtocol(): this;
-    withUsernameProtocol(): this;
 }
 //# sourceMappingURL=USyncQuery.d.ts.map

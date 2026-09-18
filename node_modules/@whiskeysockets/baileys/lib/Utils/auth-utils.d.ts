@@ -8,17 +8,12 @@ import type { ILogger } from './logger.js';
  */
 export declare function makeCacheableSignalKeyStore(store: SignalKeyStore, logger?: ILogger, _cache?: CacheStore): SignalKeyStore;
 /**
- * Adds DB-like transaction capability to the SignalKeyStore
- * Uses AsyncLocalStorage for automatic context management
+ * Adds DB like transaction capability (https://en.wikipedia.org/wiki/Database_transaction) to the SignalKeyStore,
+ * this allows batch read & write operations & improves the performance of the lib
  * @param state the key store to apply this capability to
  * @param logger logger to log events
  * @returns SignalKeyStore with transaction capability
  */
 export declare const addTransactionCapability: (state: SignalKeyStore, logger: ILogger, { maxCommitRetries, delayBetweenTriesMs }: TransactionCapabilityOptions) => SignalKeyStoreWithTransaction;
-/**
- * Returns the authenticated user's JID, or throws a Boom-401 if creds are not yet authenticated.
- * Use this anywhere we'd otherwise reach for `creds.me!.id` to fail fast with a descriptive error.
- */
-export declare const assertMeId: (creds: AuthenticationCreds) => string;
 export declare const initAuthCreds: () => AuthenticationCreds;
 //# sourceMappingURL=auth-utils.d.ts.map

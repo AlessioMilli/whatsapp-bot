@@ -1,24 +1,20 @@
+import type { AxiosRequestConfig } from 'axios';
 import { proto } from '../../WAProto/index.js';
-import type { Chat, Contact, LIDMapping, WAMessage } from '../Types/index.js';
-import type { ILogger } from './logger.js';
-export declare const downloadHistory: (msg: proto.Message.IHistorySyncNotification, options: RequestInit) => Promise<proto.HistorySync>;
-export declare const processHistoryMessage: (item: proto.IHistorySync, logger?: ILogger) => {
+import type { Chat, Contact } from '../Types/index.js';
+export declare const downloadHistory: (msg: proto.Message.IHistorySyncNotification, options: AxiosRequestConfig<{}>) => Promise<proto.HistorySync>;
+export declare const processHistoryMessage: (item: proto.IHistorySync) => {
     chats: Chat[];
     contacts: Contact[];
-    messages: WAMessage[];
-    lidPnMappings: LIDMapping[];
-    pastParticipants: proto.IPastParticipants[] | null | undefined;
-    syncType: proto.HistorySync.HistorySyncType | null | undefined;
+    messages: proto.IWebMessageInfo[];
+    syncType: proto.HistorySync.HistorySyncType;
     progress: number | null | undefined;
 };
-export declare const downloadAndProcessHistorySyncNotification: (msg: proto.Message.IHistorySyncNotification, options: RequestInit, logger?: ILogger) => Promise<{
+export declare const downloadAndProcessHistorySyncNotification: (msg: proto.Message.IHistorySyncNotification, options: AxiosRequestConfig<{}>) => Promise<{
     chats: Chat[];
     contacts: Contact[];
-    messages: WAMessage[];
-    lidPnMappings: LIDMapping[];
-    pastParticipants: proto.IPastParticipants[] | null | undefined;
-    syncType: proto.HistorySync.HistorySyncType | null | undefined;
+    messages: proto.IWebMessageInfo[];
+    syncType: proto.HistorySync.HistorySyncType;
     progress: number | null | undefined;
 }>;
-export declare const getHistoryMsg: (message: proto.IMessage) => proto.Message.IHistorySyncNotification;
+export declare const getHistoryMsg: (message: proto.IMessage) => proto.Message.IHistorySyncNotification | null | undefined;
 //# sourceMappingURL=history.d.ts.map

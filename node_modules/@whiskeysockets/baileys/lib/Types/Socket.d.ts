@@ -1,31 +1,23 @@
+import type { AxiosRequestConfig } from 'axios';
 import type { Agent } from 'https';
 import type { URL } from 'url';
 import { proto } from '../../WAProto/index.js';
 import type { ILogger } from '../Utils/logger.js';
-import type { AuthenticationState, LIDMapping, SignalAuthState, TransactionCapabilityOptions } from './Auth.js';
+import type { AuthenticationState, SignalAuthState, TransactionCapabilityOptions } from './Auth.js';
 import type { GroupMetadata } from './GroupMetadata.js';
-import { type MediaConnInfo, type WAMessageKey } from './Message.js';
-import type { SignalRepositoryWithLIDStore } from './Signal.js';
+import { type MediaConnInfo } from './Message.js';
+import type { SignalRepository } from './Signal.js';
 export type WAVersion = [number, number, number];
 export type WABrowserDescription = [string, string, string];
 export type CacheStore = {
     /** get a cached key and change the stats */
-    get<T>(key: string): Promise<T> | T | undefined;
+    get<T>(key: string): T | undefined;
     /** set a key in the cache */
-    set<T>(key: string, value: T): Promise<void> | void | number | boolean;
+    set<T>(key: string, value: T): void;
     /** delete a key from the cache */
-    del(key: string): void | Promise<void> | number | boolean;
+    del(key: string): void;
     /** flush all data */
-    flushAll(): void | Promise<void>;
-    close?: () => void;
-};
-export type PossiblyExtendedCacheStore = CacheStore & {
-    mget?: <T>(keys: string[]) => Promise<Record<string, T | undefined>>;
-    mset?: <T>(entries: {
-        key: string;
-        value: T;
-    }[]) => Promise<void> | void | number | boolean;
-    mdel?: (keys: string[]) => void | Promise<void> | number | boolean;
+    flushAll(): void;
 };
 export type PatchedMessageWithRecipientJID = proto.IMessage & {
     recipientJid?: string;
@@ -51,8 +43,6 @@ export type SocketConfig = {
     version: WAVersion;
     /** override browser config */
     browser: WABrowserDescription;
-    /** Initial pushName carried in the registration ClientPayload (used by mock servers for deterministic phone assignment). */
-    pushName?: string;
     /** agent used for fetch requests -- uploading/downloading media */
     fetchAgent?: Agent;
     /** should the QR be printed in the terminal
@@ -86,7 +76,7 @@ export type SocketConfig = {
      * used to determine whether to retry a message or not */
     msgRetryCounterCache?: CacheStore;
     /** provide a cache to store a user's device list */
-    userDevicesCache?: PossiblyExtendedCacheStore;
+    userDevicesCache?: CacheStore;
     /** cache to store call offers */
     callOfferCache?: CacheStore;
     /** cache to track placeholder resends */
@@ -102,10 +92,6 @@ export type SocketConfig = {
      * entails uploading the jpegThumbnail to WA
      * */
     generateHighQualityLinkPreview: boolean;
-    /** Enable automatic session recreation for failed messages */
-    enableAutoSessionRecreation: boolean;
-    /** Enable recent message caching for retry handling */
-    enableRecentMessageCache: boolean;
     /**
      * Returns if a jid should be ignored,
      * no event for that jid will be triggered.
@@ -121,16 +107,16 @@ export type SocketConfig = {
         patch: boolean;
         snapshot: boolean;
     };
-    /** options for HTTP fetch requests */
-    options: RequestInit;
+    /** options for axios */
+    options: AxiosRequestConfig<{}>;
     /**
      * fetch a message from your store
      * implement this so that messages failed to send
      * (solves the "this message can take a while" issue) can be retried
      * */
-    getMessage: (key: WAMessageKey) => Promise<proto.IMessage | undefined>;
+    getMessage: (key: proto.IMessageKey) => Promise<proto.IMessage | undefined>;
     /** cached group metadata, use to prevent redundant requests to WA & speed up msg sending */
     cachedGroupMetadata: (jid: string) => Promise<GroupMetadata | undefined>;
-    makeSignalRepository: (auth: SignalAuthState, logger: ILogger, pnToLIDFunc?: (jids: string[]) => Promise<LIDMapping[] | undefined>) => SignalRepositoryWithLIDStore;
+    makeSignalRepository: (auth: SignalAuthState) => SignalRepository;
 };
 //# sourceMappingURL=Socket.d.ts.map

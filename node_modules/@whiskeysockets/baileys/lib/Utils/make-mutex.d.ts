@@ -5,5 +5,4 @@ export type Mutex = ReturnType<typeof makeMutex>;
 export declare const makeKeyedMutex: () => {
     mutex<T>(key: string, task: () => Promise<T> | T): Promise<T>;
 };
-export type KeyedMutex = ReturnType<typeof makeKeyedMutex>;
 //# sourceMappingURL=make-mutex.d.ts.map

@@ -18,7 +18,7 @@ export class WebSocketClient extends AbstractSocketClient {
     get isConnecting() {
         return this.socket?.readyState === WebSocket.CONNECTING;
     }
-    connect() {
+    async connect() {
         if (this.socket) {
             return;
         }
@@ -39,11 +39,7 @@ export class WebSocketClient extends AbstractSocketClient {
         if (!this.socket) {
             return;
         }
-        const closePromise = new Promise(resolve => {
-            this.socket?.once('close', resolve);
-        });
         this.socket.close();
-        await closePromise;
         this.socket = null;
     }
     send(str, cb) {

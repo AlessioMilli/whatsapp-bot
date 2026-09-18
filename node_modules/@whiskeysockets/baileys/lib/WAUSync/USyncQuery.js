@@ -1,7 +1,7 @@
 import { getBinaryNodeChild } from '../WABinary/index.js';
 import { USyncBotProfileProtocol } from './Protocols/UsyncBotProfileProtocol.js';
 import { USyncLIDProtocol } from './Protocols/UsyncLIDProtocol.js';
-import { USyncContactProtocol, USyncDeviceProtocol, USyncDisappearingModeProtocol, USyncStatusProtocol, USyncUsernameProtocol } from './Protocols/index.js';
+import { USyncContactProtocol, USyncDeviceProtocol, USyncDisappearingModeProtocol, USyncStatusProtocol } from './Protocols/index.js';
 import { USyncUser } from './USyncUser.js';
 export class USyncQuery {
     constructor() {
@@ -23,7 +23,7 @@ export class USyncQuery {
         return this;
     }
     parseUSyncQueryResult(result) {
-        if (result?.attrs.type !== 'result') {
+        if (result.attrs.type !== 'result') {
             return;
         }
         const protocolMap = Object.fromEntries(this.protocols.map(protocol => {
@@ -38,29 +38,26 @@ export class USyncQuery {
         //TODO: implement error backoff, refresh etc.
         //TODO: see if there are any errors in the result node
         //const resultNode = getBinaryNodeChild(usyncNode, 'result')
-        const listNode = usyncNode ? getBinaryNodeChild(usyncNode, 'list') : undefined;
-        if (listNode?.content && Array.isArray(listNode.content)) {
-            queryResult.list = listNode.content.reduce((acc, node) => {
+        const listNode = getBinaryNodeChild(usyncNode, 'list');
+        if (Array.isArray(listNode?.content) && typeof listNode !== 'undefined') {
+            queryResult.list = listNode.content.map(node => {
                 const id = node?.attrs.jid;
-                if (id) {
-                    const data = Array.isArray(node?.content)
-                        ? Object.fromEntries(node.content
-                            .map(content => {
-                            const protocol = content.tag;
-                            const parser = protocolMap[protocol];
-                            if (parser) {
-                                return [protocol, parser(content)];
-                            }
-                            else {
-                                return [protocol, null];
-                            }
-                        })
-                            .filter(([, b]) => b !== null))
-                        : {};
-                    acc.push({ ...data, id });
-                }
-                return acc;
-            }, []);
+                const data = Array.isArray(node?.content)
+                    ? Object.fromEntries(node.content
+                        .map(content => {
+                        const protocol = content.tag;
+                        const parser = protocolMap[protocol];
+                        if (parser) {
+                            return [protocol, parser(content)];
+                        }
+                        else {
+                            return [protocol, null];
+                        }
+                    })
+                        .filter(([, b]) => b !== null))
+                    : {};
+                return { ...data, id };
+            });
         }
         //TODO: implement side list
         //const sideListNode = getBinaryNodeChild(usyncNode, 'side_list')
@@ -88,10 +85,6 @@ export class USyncQuery {
     }
     withLIDProtocol() {
         this.protocols.push(new USyncLIDProtocol());
-        return this;
-    }
-    withUsernameProtocol() {
-        this.protocols.push(new USyncUsernameProtocol());
         return this;
     }
 }

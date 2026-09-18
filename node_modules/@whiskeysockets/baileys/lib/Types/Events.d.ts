@@ -1,14 +1,14 @@
 import type { Boom } from '@hapi/boom';
 import { proto } from '../../WAProto/index.js';
-import type { AuthenticationCreds, LIDMapping } from './Auth.js';
+import type { AuthenticationCreds } from './Auth.js';
 import type { WACallEvent } from './Call.js';
 import type { Chat, ChatUpdate, PresenceData } from './Chat.js';
 import type { Contact } from './Contact.js';
-import type { GroupMetadata, GroupParticipant, ParticipantAction, RequestJoinAction, RequestJoinMethod } from './GroupMetadata.js';
+import type { GroupMetadata, ParticipantAction, RequestJoinAction, RequestJoinMethod } from './GroupMetadata.js';
 import type { Label } from './Label.js';
 import type { LabelAssociation } from './LabelAssociation.js';
 import type { MessageUpsertType, MessageUserReceiptUpdate, WAMessage, WAMessageKey, WAMessageUpdate } from './Message.js';
-import type { ConnectionState, NewChatMessageCapInfo } from './State.js';
+import type { ConnectionState } from './State.js';
 export type BaileysEventMap = {
     /** connection state has been updated -- WS closed, opened, connecting etc. */
     'connection.update': Partial<ConnectionState>;
@@ -19,31 +19,19 @@ export type BaileysEventMap = {
         chats: Chat[];
         contacts: Contact[];
         messages: WAMessage[];
-        lidPnMappings?: LIDMapping[];
         isLatest?: boolean;
         progress?: number | null;
-        syncType?: proto.HistorySync.HistorySyncType | null;
-        pastParticipants?: proto.IPastParticipants[] | null;
-        chunkOrder?: number | null;
+        syncType?: proto.HistorySync.HistorySyncType;
         peerDataRequestSessionId?: string | null;
-    };
-    /** signals history sync milestones (completion or stall) per sync type */
-    'messaging-history.status': {
-        /** which sync phase this status refers to */
-        syncType: proto.HistorySync.HistorySyncType;
-        /** the status of this sync phase */
-        status: 'complete' | 'paused';
-        /**
-         * progress === 100 was received from the server.
-         * when false, completion was inferred via timeout (no more chunks arriving).
-         */
-        explicit: boolean;
     };
     /** upsert chats */
     'chats.upsert': Chat[];
     /** update the given chats */
     'chats.update': ChatUpdate[];
-    'lid-mapping.update': LIDMapping;
+    'chats.phoneNumberShare': {
+        lid: string;
+        jid: string;
+    };
     /** delete chats with given ID */
     'chats.delete': string[];
     /** presence of contact in a chat updated */
@@ -92,27 +80,15 @@ export type BaileysEventMap = {
     'group-participants.update': {
         id: string;
         author: string;
-        authorPn?: string;
-        authorUsername?: string;
-        participants: GroupParticipant[];
+        participants: string[];
         action: ParticipantAction;
     };
     'group.join-request': {
         id: string;
         author: string;
-        authorPn?: string;
-        authorUsername?: string;
         participant: string;
-        participantPn?: string;
         action: RequestJoinAction;
         method: RequestJoinMethod;
-    };
-    'group.member-tag.update': {
-        groupId: string;
-        participant: string;
-        participantAlt?: string;
-        label: string;
-        messageTimestamp?: number;
     };
     'blocklist.set': {
         blocklist: string[];
@@ -154,37 +130,6 @@ export type BaileysEventMap = {
         id: string;
         update: any;
     };
-    'message-capping.update': NewChatMessageCapInfo;
-    /** Settings and actions sync events */
-    'chats.lock': {
-        id: string;
-        locked: boolean;
-    };
-    'settings.update': {
-        setting: 'unarchiveChats';
-        value: boolean;
-    } | {
-        setting: 'locale';
-        value: string;
-    } | {
-        setting: 'disableLinkPreviews';
-        value: proto.SyncActionValue.IPrivacySettingDisableLinkPreviewsAction;
-    } | {
-        setting: 'timeFormat';
-        value: proto.SyncActionValue.ITimeFormatAction;
-    } | {
-        setting: 'privacySettingRelayAllCalls';
-        value: proto.SyncActionValue.IPrivacySettingRelayAllCalls;
-    } | {
-        setting: 'statusPrivacy';
-        value: proto.SyncActionValue.IStatusPrivacyAction;
-    } | {
-        setting: 'notificationActivitySetting';
-        value: proto.SyncActionValue.NotificationActivitySettingAction.NotificationActivitySetting;
-    } | {
-        setting: 'channelsPersonalisedRecommendation';
-        value: proto.SyncActionValue.IPrivacySettingChannelsPersonalisedRecommendationAction;
-    };
 };
 export type BufferedEventData = {
     historySets: {
@@ -201,8 +146,6 @@ export type BufferedEventData = {
         isLatest: boolean;
         progress?: number | null;
         syncType?: proto.HistorySync.HistorySyncType;
-        pastParticipants?: proto.IPastParticipants[];
-        chunkOrder?: number | null;
         peerDataRequestSessionId?: string;
     };
     chatUpserts: {

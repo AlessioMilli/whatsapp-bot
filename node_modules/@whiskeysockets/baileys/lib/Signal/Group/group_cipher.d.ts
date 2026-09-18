@@ -8,7 +8,8 @@ export declare class GroupCipher {
     private readonly senderKeyStore;
     private readonly senderKeyName;
     constructor(senderKeyStore: SenderKeyStore, senderKeyName: SenderKeyName);
-    encrypt(paddedPlaintext: Uint8Array): Promise<Uint8Array>;
+    private queueJob;
+    encrypt(paddedPlaintext: Uint8Array | string): Promise<Uint8Array>;
     decrypt(senderKeyMessageBytes: Uint8Array): Promise<Uint8Array>;
     private getSenderKey;
     private getPlainText;

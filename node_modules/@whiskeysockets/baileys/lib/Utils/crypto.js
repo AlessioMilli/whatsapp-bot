@@ -1,14 +1,14 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'crypto';
-import * as curve from 'libsignal/src/curve.js';
+/* @ts-ignore */
+import * as libsignal from 'libsignal';
 import { KEY_BUNDLE_TYPE } from '../Defaults/index.js';
-export { md5, hkdf } from 'whatsapp-rust-bridge';
 // insure browser & node compatibility
 const { subtle } = globalThis.crypto;
 /** prefix version byte to the pub keys, required for some curve crypto functions */
 export const generateSignalPubKey = (pubKey) => pubKey.length === 33 ? pubKey : Buffer.concat([KEY_BUNDLE_TYPE, pubKey]);
 export const Curve = {
     generateKeyPair: () => {
-        const { pubKey, privKey } = curve.generateKeyPair();
+        const { pubKey, privKey } = libsignal.curve.generateKeyPair();
         return {
             private: Buffer.from(privKey),
             // remove version byte
@@ -16,13 +16,13 @@ export const Curve = {
         };
     },
     sharedKey: (privateKey, publicKey) => {
-        const shared = curve.calculateAgreement(generateSignalPubKey(publicKey), privateKey);
+        const shared = libsignal.curve.calculateAgreement(generateSignalPubKey(publicKey), privateKey);
         return Buffer.from(shared);
     },
-    sign: (privateKey, buf) => curve.calculateSignature(privateKey, buf),
+    sign: (privateKey, buf) => libsignal.curve.calculateSignature(privateKey, buf),
     verify: (pubKey, message, signature) => {
         try {
-            curve.verifySignature(generateSignalPubKey(pubKey), message, signature);
+            libsignal.curve.verifySignature(generateSignalPubKey(pubKey), message, signature);
             return true;
         }
         catch (error) {
@@ -70,7 +70,7 @@ export function aesDecryptCTR(ciphertext, key, iv) {
 }
 /** decrypt AES 256 CBC; where the IV is prefixed to the buffer */
 export function aesDecrypt(buffer, key) {
-    return aesDecryptWithIV(buffer.subarray(16), key, buffer.subarray(0, 16));
+    return aesDecryptWithIV(buffer.slice(16, buffer.length), key, buffer.slice(0, 16));
 }
 /** decrypt AES 256 CBC */
 export function aesDecryptWithIV(buffer, key, IV) {
@@ -95,15 +95,35 @@ export function hmacSign(buffer, key, variant = 'sha256') {
 export function sha256(buffer) {
     return createHash('sha256').update(buffer).digest();
 }
+export function md5(buffer) {
+    return createHash('md5').update(buffer).digest();
+}
+// HKDF key expansion
+export async function hkdf(buffer, expandedLength, info) {
+    // Ensure we have a Uint8Array for the key material
+    const inputKeyMaterial = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    // Set default values if not provided
+    const salt = info.salt ? new Uint8Array(info.salt) : new Uint8Array(0);
+    const infoBytes = info.info ? new TextEncoder().encode(info.info) : new Uint8Array(0);
+    // Import the input key material
+    const importedKey = await subtle.importKey('raw', inputKeyMaterial, { name: 'HKDF' }, false, ['deriveBits']);
+    // Derive bits using HKDF
+    const derivedBits = await subtle.deriveBits({
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: salt,
+        info: infoBytes
+    }, importedKey, expandedLength * 8 // Convert bytes to bits
+    );
+    return Buffer.from(derivedBits);
+}
 export async function derivePairingCodeKey(pairingCode, salt) {
     // Convert inputs to formats Web Crypto API can work with
     const encoder = new TextEncoder();
     const pairingCodeBuffer = encoder.encode(pairingCode);
-    const saltBuffer = new Uint8Array(salt instanceof Uint8Array ? salt : new Uint8Array(salt));
+    const saltBuffer = salt instanceof Uint8Array ? salt : new Uint8Array(salt);
     // Import the pairing code as key material
-    const keyMaterial = await subtle.importKey('raw', pairingCodeBuffer, { name: 'PBKDF2' }, false, [
-        'deriveBits'
-    ]);
+    const keyMaterial = await subtle.importKey('raw', pairingCodeBuffer, { name: 'PBKDF2' }, false, ['deriveBits']);
     // Derive bits using PBKDF2 with the same parameters
     // 2 << 16 = 131,072 iterations
     const derivedBits = await subtle.deriveBits({

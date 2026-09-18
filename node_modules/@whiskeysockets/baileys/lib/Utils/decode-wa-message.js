@@ -1,42 +1,10 @@
 import { Boom } from '@hapi/boom';
 import { proto } from '../../WAProto/index.js';
-import { areJidsSameUser, isHostedLidUser, isHostedPnUser, isJidBroadcast, isJidGroup, isJidMetaAI, isJidNewsletter, isJidStatusBroadcast, isLidUser, isPnUser
-//	transferDevice
- } from '../WABinary/index.js';
+import { areJidsSameUser, isJidBroadcast, isJidGroup, isJidMetaIa, isJidNewsletter, isJidStatusBroadcast, isJidUser, isLidUser } from '../WABinary/index.js';
 import { unpadRandomMax16 } from './generics.js';
-export const getDecryptionJid = async (sender, repository) => {
-    if (isLidUser(sender) || isHostedLidUser(sender)) {
-        return sender;
-    }
-    const mapped = await repository.lidMapping.getLIDForPN(sender);
-    return mapped || sender;
-};
-const storeMappingFromEnvelope = async (stanza, sender, repository, decryptionJid, logger) => {
-    // TODO: Handle hosted IDs
-    const { senderAlt } = extractAddressingContext(stanza);
-    if (senderAlt && isLidUser(senderAlt) && isPnUser(sender) && decryptionJid === sender) {
-        try {
-            await repository.lidMapping.storeLIDPNMappings([{ lid: senderAlt, pn: sender }]);
-            await repository.migrateSession(sender, senderAlt);
-            logger.debug({ sender, senderAlt }, 'Stored LID mapping from envelope');
-        }
-        catch (error) {
-            logger.warn({ sender, senderAlt, error }, 'Failed to store LID mapping');
-        }
-    }
-};
 export const NO_MESSAGE_FOUND_ERROR_TEXT = 'Message absent from node';
 export const MISSING_KEYS_ERROR_TEXT = 'Key used already or never filled';
-export const ACCOUNT_RESTRICTED_TEXT = 'Your account has been restricted';
-// Retry configuration for failed decryption
-export const DECRYPTION_RETRY_CONFIG = {
-    maxRetries: 3,
-    baseDelayMs: 100,
-    sessionRecordErrors: ['No session record', 'SessionError: No session record']
-};
-/** NACK reason codes we send to the server (client → server) */
 export const NACK_REASONS = {
-    SenderReachoutTimelocked: 463,
     ParsingError: 487,
     UnrecognizedStanza: 488,
     UnrecognizedStanzaClass: 489,
@@ -52,48 +20,6 @@ export const NACK_REASONS = {
     DBOperationFailed: 552
 };
 /**
- * Server-side error codes returned in ack stanzas (server → client) that we
- * currently have dedicated handlers for. Extend as more handlers are added.
- * Distinct from the client-side NackReason enum (WAWebCreateNackFromStanza).
- */
-export const SERVER_ERROR_CODES = {
-    /**
-     * 1:1 message missing privacy token (tctoken). Usually means the account is
-     * restricted: WhatsApp blocks starting new chats but preserves existing ones,
-     * since established chats already carry a tctoken.
-     */
-    MessageAccountRestriction: '463',
-    /** Stanza validation failure (SMAX_INVALID) — likely stale device session */
-    SmaxInvalid: '479'
-};
-export const extractAddressingContext = (stanza) => {
-    let senderAlt;
-    let recipientAlt;
-    const sender = stanza.attrs.participant || stanza.attrs.from;
-    const addressingMode = stanza.attrs.addressing_mode || (sender?.endsWith('lid') ? 'lid' : 'pn');
-    if (addressingMode === 'lid') {
-        // Message is LID-addressed: sender is LID, extract corresponding PN
-        // without device data
-        senderAlt = stanza.attrs.participant_pn || stanza.attrs.sender_pn || stanza.attrs.peer_recipient_pn;
-        recipientAlt = stanza.attrs.recipient_pn;
-        // with device data
-        //if (sender && senderAlt) senderAlt = transferDevice(sender, senderAlt)
-    }
-    else {
-        // Message is PN-addressed: sender is PN, extract corresponding LID
-        // without device data
-        senderAlt = stanza.attrs.participant_lid || stanza.attrs.sender_lid || stanza.attrs.peer_recipient_lid;
-        recipientAlt = stanza.attrs.recipient_lid;
-        //with device data
-        //if (sender && senderAlt) senderAlt = transferDevice(sender, senderAlt)
-    }
-    return {
-        addressingMode,
-        senderAlt,
-        recipientAlt
-    };
-};
-/**
  * Decode the received node as a message.
  * @note this will only parse the message, not decrypt it
  */
@@ -101,37 +27,20 @@ export function decodeMessageNode(stanza, meId, meLid) {
     let msgType;
     let chatId;
     let author;
-    let fromMe = false;
     const msgId = stanza.attrs.id;
     const from = stanza.attrs.from;
     const participant = stanza.attrs.participant;
     const recipient = stanza.attrs.recipient;
-    if (!msgId) {
-        throw new Boom('Invalid message stanza: missing id attribute', { data: stanza });
-    }
-    if (!from) {
-        throw new Boom('Invalid message stanza: missing from attribute', { data: stanza });
-    }
-    const addressingContext = extractAddressingContext(stanza);
     const isMe = (jid) => areJidsSameUser(jid, meId);
     const isMeLid = (jid) => areJidsSameUser(jid, meLid);
-    if (isPnUser(from) || isLidUser(from) || isHostedLidUser(from) || isHostedPnUser(from)) {
-        if (recipient && !isJidMetaAI(recipient)) {
+    if (isJidUser(from) || isLidUser(from)) {
+        if (recipient && !isJidMetaIa(recipient)) {
             if (!isMe(from) && !isMeLid(from)) {
                 throw new Boom('receipient present, but msg not from me', { data: stanza });
-            }
-            if (isMe(from) || isMeLid(from)) {
-                fromMe = true;
             }
             chatId = recipient;
         }
         else {
-            // Peer-routed self stanzas (history sync, app-state sync, etc.) arrive
-            // with `from` set to our own device but no `recipient` attribute —
-            // still mark as fromMe so self-only protocolMessage handlers run.
-            if (isMe(from) || isMeLid(from)) {
-                fromMe = true;
-            }
             chatId = from;
         }
         msgType = 'chat';
@@ -140,9 +49,6 @@ export function decodeMessageNode(stanza, meId, meLid) {
     else if (isJidGroup(from)) {
         if (!participant) {
             throw new Boom('No participant in group message');
-        }
-        if (isMe(participant) || isMeLid(participant)) {
-            fromMe = true;
         }
         msgType = 'group';
         author = participant;
@@ -159,7 +65,6 @@ export function decodeMessageNode(stanza, meId, meLid) {
         else {
             msgType = isParticipantMe ? 'peer_broadcast' : 'other_broadcast';
         }
-        fromMe = isParticipantMe;
         chatId = from;
         author = participant;
     }
@@ -167,31 +72,30 @@ export function decodeMessageNode(stanza, meId, meLid) {
         msgType = 'newsletter';
         chatId = from;
         author = from;
-        if (isMe(from) || isMeLid(from)) {
-            fromMe = true;
-        }
     }
     else {
         throw new Boom('Unknown message type', { data: stanza });
     }
+    // Check the sender against both our PN and LID identities — picking only
+    // one based on `from`'s format misses peer-routed self stanzas (history
+    // sync, app-state sync, etc.) when `from` and our stored identity are in
+    // different formats, leaving fromMe wrongly false.
+    const senderJid = (stanza.attrs.participant || stanza.attrs.from);
+    const fromMe = isMe(senderJid) || isMeLid(senderJid);
     const pushname = stanza?.attrs?.notify;
     const key = {
         remoteJid: chatId,
-        remoteJidAlt: !isJidGroup(chatId) ? addressingContext.senderAlt : undefined,
-        remoteJidUsername: !isJidGroup(chatId)
-            ? stanza.attrs.peer_recipient_username || stanza.attrs.recipient_username
-            : undefined,
         fromMe,
         id: msgId,
+        senderLid: stanza?.attrs?.sender_lid,
+        senderPn: stanza?.attrs?.sender_pn,
         participant,
-        participantAlt: isJidGroup(chatId) ? addressingContext.senderAlt : undefined,
-        participantUsername: stanza.attrs.participant ? stanza.attrs.participant_username : undefined,
-        addressingMode: addressingContext.addressingMode,
+        participantPn: stanza?.attrs?.participant_pn,
+        participantLid: stanza?.attrs?.participant_lid,
         ...(msgType === 'newsletter' && stanza.attrs.server_id ? { server_id: stanza.attrs.server_id } : {})
     };
     const fullMessage = {
         key,
-        category: stanza.attrs.category,
         messageTimestamp: +stanza.attrs.t,
         pushName: pushname,
         broadcast: isJidBroadcast(from)
@@ -221,10 +125,7 @@ export const decryptMessageNode = (stanza, meId, meLid, repository, logger) => {
                         fullMessage.verifiedBizName = details.verifiedName;
                     }
                     if (tag === 'unavailable' && attrs.type === 'view_once') {
-                        fullMessage.key.isViewOnce = true; // TODO: remove from here and add a STUB TYPE
-                    }
-                    if (attrs.count && tag === 'enc') {
-                        fullMessage.retryCount = Number(attrs.count);
+                        fullMessage.key.isViewOnce = true;
                     }
                     if (tag !== 'enc' && tag !== 'plaintext') {
                         continue;
@@ -234,11 +135,6 @@ export const decryptMessageNode = (stanza, meId, meLid, repository, logger) => {
                     }
                     decryptables += 1;
                     let msgBuffer;
-                    const decryptionJid = await getDecryptionJid(author, repository);
-                    if (tag !== 'plaintext') {
-                        // TODO: Handle hosted devices
-                        await storeMappingFromEnvelope(stanza, author, repository, decryptionJid, logger);
-                    }
                     try {
                         const e2eType = tag === 'plaintext' ? 'plaintext' : attrs.type;
                         switch (e2eType) {
@@ -251,8 +147,9 @@ export const decryptMessageNode = (stanza, meId, meLid, repository, logger) => {
                                 break;
                             case 'pkmsg':
                             case 'msg':
+                                const user = isJidUser(sender) ? sender : author;
                                 msgBuffer = await repository.decryptMessage({
-                                    jid: decryptionJid,
+                                    jid: user,
                                     type: e2eType,
                                     ciphertext: content
                                 });
@@ -274,7 +171,7 @@ export const decryptMessageNode = (stanza, meId, meLid, repository, logger) => {
                                 });
                             }
                             catch (err) {
-                                logger.error({ key: fullMessage.key, err }, 'failed to process sender key distribution message');
+                                logger.error({ key: fullMessage.key, err }, 'failed to decrypt message');
                             }
                         }
                         if (fullMessage.message) {
@@ -285,33 +182,18 @@ export const decryptMessageNode = (stanza, meId, meLid, repository, logger) => {
                         }
                     }
                     catch (err) {
-                        const errorContext = {
-                            key: fullMessage.key,
-                            err,
-                            messageType: tag === 'plaintext' ? 'plaintext' : attrs.type,
-                            sender,
-                            author,
-                            isSessionRecordError: isSessionRecordError(err)
-                        };
-                        logger.error(errorContext, 'failed to decrypt message');
+                        logger.error({ key: fullMessage.key, err }, 'failed to decrypt message');
                         fullMessage.messageStubType = proto.WebMessageInfo.StubType.CIPHERTEXT;
-                        fullMessage.messageStubParameters = [err.message.toString()];
+                        fullMessage.messageStubParameters = [err.message];
                     }
                 }
             }
             // if nothing was found to decrypt
-            if (!decryptables && !fullMessage.key?.isViewOnce) {
+            if (!decryptables) {
                 fullMessage.messageStubType = proto.WebMessageInfo.StubType.CIPHERTEXT;
                 fullMessage.messageStubParameters = [NO_MESSAGE_FOUND_ERROR_TEXT];
             }
         }
     };
 };
-/**
- * Utility function to check if an error is related to missing session record
- */
-function isSessionRecordError(error) {
-    const errorMessage = error?.message || error?.toString() || '';
-    return DECRYPTION_RETRY_CONFIG.sessionRecordErrors.some(errorPattern => errorMessage.includes(errorPattern));
-}
 //# sourceMappingURL=decode-wa-message.js.map

@@ -1,15 +1,15 @@
 import { Boom } from '@hapi/boom';
+import axios from 'axios';
 import { randomBytes } from 'crypto';
 import { promises as fs } from 'fs';
 import {} from 'stream';
 import { proto } from '../../WAProto/index.js';
-import { CALL_AUDIO_PREFIX, CALL_VIDEO_PREFIX, MEDIA_KEYS, URL_REGEX, WA_DEFAULT_EPHEMERAL } from '../Defaults/index.js';
+import { MEDIA_KEYS, URL_REGEX, WA_DEFAULT_EPHEMERAL } from '../Defaults/index.js';
 import { WAMessageStatus, WAProto } from '../Types/index.js';
 import { isJidGroup, isJidNewsletter, isJidStatusBroadcast, jidNormalizedUser } from '../WABinary/index.js';
 import { sha256 } from './crypto.js';
 import { generateMessageIDV2, getKeyAuthor, unixTimestampSeconds } from './generics.js';
 import { downloadContentFromMessage, encryptedStream, generateThumbnail, getAudioDuration, getAudioWaveform, getRawMediaUploadData } from './messages-media.js';
-import { shouldIncludeReportingToken } from './reporting-utils.js';
 const MIMETYPE_MAP = {
     image: 'image/jpeg',
     video: 'video/mp4',
@@ -87,10 +87,10 @@ export const prepareWAMessageMedia = async (message, options) => {
         uploadData.mimetype = MIMETYPE_MAP[mediaType];
     }
     if (cacheableKey) {
-        const mediaBuff = await options.mediaCache.get(cacheableKey);
+        const mediaBuff = options.mediaCache.get(cacheableKey);
         if (mediaBuff) {
             logger?.debug({ cacheableKey }, 'got media cache hit');
-            const obj = proto.Message.decode(mediaBuff);
+            const obj = WAProto.Message.decode(mediaBuff);
             const key = `${mediaType}Message`;
             Object.assign(obj[key], { ...uploadData, media: undefined });
             return obj;
@@ -122,18 +122,15 @@ export const prepareWAMessageMedia = async (message, options) => {
             obj.ptvMessage = obj.videoMessage;
             delete obj.videoMessage;
         }
-        if (obj.stickerMessage) {
-            obj.stickerMessage.stickerSentTs = Date.now();
-        }
         if (cacheableKey) {
             logger?.debug({ cacheableKey }, 'set cache');
-            await options.mediaCache.set(cacheableKey, WAProto.Message.encode(obj).finish());
+            options.mediaCache.set(cacheableKey, WAProto.Message.encode(obj).finish());
         }
         return obj;
     }
     const requiresDurationComputation = mediaType === 'audio' && typeof uploadData.seconds === 'undefined';
     const requiresThumbnailComputation = (mediaType === 'image' || mediaType === 'video') && typeof uploadData['jpegThumbnail'] === 'undefined';
-    const requiresWaveformProcessing = mediaType === 'audio' && uploadData.ptt === true && typeof uploadData.waveform === 'undefined';
+    const requiresWaveformProcessing = mediaType === 'audio' && uploadData.ptt === true;
     const requiresAudioBackground = options.backgroundColor && mediaType === 'audio' && uploadData.ptt === true;
     const requiresOriginalForSomeProcessing = requiresDurationComputation || requiresThumbnailComputation;
     const { mediaKey, encFilePath, originalFilePath, fileEncSha256, fileSha256, fileLength } = await encryptedStream(uploadData.media, options.mediaTypeOverride || mediaType, {
@@ -212,7 +209,7 @@ export const prepareWAMessageMedia = async (message, options) => {
     }
     if (cacheableKey) {
         logger?.debug({ cacheableKey }, 'set cache');
-        await options.mediaCache.set(cacheableKey, WAProto.Message.encode(obj).finish());
+        options.mediaCache.set(cacheableKey, WAProto.Message.encode(obj).finish());
     }
     return obj;
 };
@@ -260,20 +257,10 @@ export const generateForwardMessageContent = (message, forceForward) => {
     }
     return content;
 };
-export const hasNonNullishProperty = (message, key) => {
-    return (typeof message === 'object' &&
-        message !== null &&
-        key in message &&
-        message[key] !== null &&
-        message[key] !== undefined);
-};
-function hasOptionalProperty(obj, key) {
-    return typeof obj === 'object' && obj !== null && key in obj && obj[key] !== null;
-}
 export const generateWAMessageContent = async (message, options) => {
     var _a, _b;
     let m = {};
-    if (hasNonNullishProperty(message, 'text')) {
+    if ('text' in message) {
         const extContent = { text: message.text };
         let urlInfo = message.linkPreview;
         if (typeof urlInfo === 'undefined') {
@@ -304,37 +291,37 @@ export const generateWAMessageContent = async (message, options) => {
         }
         m.extendedTextMessage = extContent;
     }
-    else if (hasNonNullishProperty(message, 'contacts')) {
+    else if ('contacts' in message) {
         const contactLen = message.contacts.contacts.length;
         if (!contactLen) {
             throw new Boom('require atleast 1 contact', { statusCode: 400 });
         }
         if (contactLen === 1) {
-            m.contactMessage = WAProto.Message.ContactMessage.create(message.contacts.contacts[0]);
+            m.contactMessage = WAProto.Message.ContactMessage.fromObject(message.contacts.contacts[0]);
         }
         else {
-            m.contactsArrayMessage = WAProto.Message.ContactsArrayMessage.create(message.contacts);
+            m.contactsArrayMessage = WAProto.Message.ContactsArrayMessage.fromObject(message.contacts);
         }
     }
-    else if (hasNonNullishProperty(message, 'location')) {
-        m.locationMessage = WAProto.Message.LocationMessage.create(message.location);
+    else if ('location' in message) {
+        m.locationMessage = WAProto.Message.LocationMessage.fromObject(message.location);
     }
-    else if (hasNonNullishProperty(message, 'react')) {
+    else if ('react' in message) {
         if (!message.react.senderTimestampMs) {
             message.react.senderTimestampMs = Date.now();
         }
-        m.reactionMessage = WAProto.Message.ReactionMessage.create(message.react);
+        m.reactionMessage = WAProto.Message.ReactionMessage.fromObject(message.react);
     }
-    else if (hasNonNullishProperty(message, 'delete')) {
+    else if ('delete' in message) {
         m.protocolMessage = {
             key: message.delete,
             type: WAProto.Message.ProtocolMessage.Type.REVOKE
         };
     }
-    else if (hasNonNullishProperty(message, 'forward')) {
+    else if ('forward' in message) {
         m = generateForwardMessageContent(message.forward, message.force);
     }
-    else if (hasNonNullishProperty(message, 'disappearingMessagesInChat')) {
+    else if ('disappearingMessagesInChat' in message) {
         const exp = typeof message.disappearingMessagesInChat === 'boolean'
             ? message.disappearingMessagesInChat
                 ? WA_DEFAULT_EPHEMERAL
@@ -342,7 +329,7 @@ export const generateWAMessageContent = async (message, options) => {
             : message.disappearingMessagesInChat;
         m = prepareDisappearingMessageSettingContent(exp);
     }
-    else if (hasNonNullishProperty(message, 'groupInvite')) {
+    else if ('groupInvite' in message) {
         m.groupInviteMessage = {};
         m.groupInviteMessage.inviteCode = message.groupInvite.inviteCode;
         m.groupInviteMessage.inviteExpiration = message.groupInvite.inviteExpiration;
@@ -354,15 +341,14 @@ export const generateWAMessageContent = async (message, options) => {
         if (options.getProfilePicUrl) {
             const pfpUrl = await options.getProfilePicUrl(message.groupInvite.jid, 'preview');
             if (pfpUrl) {
-                const resp = await fetch(pfpUrl, { method: 'GET', dispatcher: options?.options?.dispatcher });
-                if (resp.ok) {
-                    const buf = Buffer.from(await resp.arrayBuffer());
-                    m.groupInviteMessage.jpegThumbnail = buf;
+                const resp = await axios.get(pfpUrl, { responseType: 'arraybuffer' });
+                if (resp.status === 200) {
+                    m.groupInviteMessage.jpegThumbnail = resp.data;
                 }
             }
         }
     }
-    else if (hasNonNullishProperty(message, 'pin')) {
+    else if ('pin' in message) {
         m.pinInChatMessage = {};
         m.messageContextInfo = {};
         m.pinInChatMessage.key = message.pin;
@@ -370,7 +356,7 @@ export const generateWAMessageContent = async (message, options) => {
         m.pinInChatMessage.senderTimestampMs = Date.now();
         m.messageContextInfo.messageAddOnDurationInSecs = message.type === 1 ? message.time || 86400 : 0;
     }
-    else if (hasNonNullishProperty(message, 'buttonReply')) {
+    else if ('buttonReply' in message) {
         switch (message.type) {
             case 'template':
                 m.templateButtonReplyMessage = {
@@ -388,13 +374,13 @@ export const generateWAMessageContent = async (message, options) => {
                 break;
         }
     }
-    else if (hasOptionalProperty(message, 'ptv') && message.ptv) {
+    else if ('ptv' in message && message.ptv) {
         const { videoMessage } = await prepareWAMessageMedia({ video: message.video }, options);
         m.ptvMessage = videoMessage;
     }
-    else if (hasNonNullishProperty(message, 'product')) {
+    else if ('product' in message) {
         const { imageMessage } = await prepareWAMessageMedia({ image: message.product.productImage }, options);
-        m.productMessage = WAProto.Message.ProductMessage.create({
+        m.productMessage = WAProto.Message.ProductMessage.fromObject({
             ...message,
             product: {
                 ...message.product,
@@ -402,30 +388,10 @@ export const generateWAMessageContent = async (message, options) => {
             }
         });
     }
-    else if (hasNonNullishProperty(message, 'listReply')) {
+    else if ('listReply' in message) {
         m.listResponseMessage = { ...message.listReply };
     }
-    else if (hasNonNullishProperty(message, 'event')) {
-        m.eventMessage = {};
-        const startTime = Math.floor(message.event.startDate.getTime() / 1000);
-        if (message.event.call && options.getCallLink) {
-            const token = await options.getCallLink(message.event.call, { startTime });
-            m.eventMessage.joinLink = (message.event.call === 'audio' ? CALL_AUDIO_PREFIX : CALL_VIDEO_PREFIX) + token;
-        }
-        m.messageContextInfo = {
-            // encKey
-            messageSecret: message.event.messageSecret || randomBytes(32)
-        };
-        m.eventMessage.name = message.event.name;
-        m.eventMessage.description = message.event.description;
-        m.eventMessage.startTime = startTime;
-        m.eventMessage.endTime = message.event.endDate ? message.event.endDate.getTime() / 1000 : undefined;
-        m.eventMessage.isCanceled = message.event.isCancelled ?? false;
-        m.eventMessage.extraGuestsAllowed = message.event.extraGuestsAllowed;
-        m.eventMessage.isScheduleCall = message.event.isScheduleCall ?? false;
-        m.eventMessage.location = message.event.location;
-    }
-    else if (hasNonNullishProperty(message, 'poll')) {
+    else if ('poll' in message) {
         (_a = message.poll).selectableCount || (_a.selectableCount = 0);
         (_b = message.poll).toAnnouncementGroup || (_b.toAnnouncementGroup = false);
         if (!Array.isArray(message.poll.values)) {
@@ -460,58 +426,33 @@ export const generateWAMessageContent = async (message, options) => {
             }
         }
     }
-    else if (hasNonNullishProperty(message, 'album')) {
-        m.albumMessage = {
-            expectedImageCount: message.album.expectedImageCount,
-            expectedVideoCount: message.album.expectedVideoCount
-        };
-    }
-    else if (hasNonNullishProperty(message, 'sharePhoneNumber')) {
+    else if ('sharePhoneNumber' in message) {
         m.protocolMessage = {
             type: proto.Message.ProtocolMessage.Type.SHARE_PHONE_NUMBER
         };
     }
-    else if (hasNonNullishProperty(message, 'requestPhoneNumber')) {
+    else if ('requestPhoneNumber' in message) {
         m.requestPhoneNumberMessage = {};
-    }
-    else if (hasNonNullishProperty(message, 'limitSharing')) {
-        m.protocolMessage = {
-            type: proto.Message.ProtocolMessage.Type.LIMIT_SHARING,
-            limitSharing: {
-                sharingLimited: message.limitSharing === true,
-                trigger: 1,
-                limitSharingSettingTimestamp: Date.now(),
-                initiatedByMe: true
-            }
-        };
     }
     else {
         m = await prepareWAMessageMedia(message, options);
     }
-    if (hasOptionalProperty(message, 'viewOnce') && !!message.viewOnce) {
+    if ('viewOnce' in message && !!message.viewOnce) {
         m = { viewOnceMessage: { message: m } };
     }
-    if ((hasOptionalProperty(message, 'mentions') && message.mentions?.length) ||
-        (hasOptionalProperty(message, 'mentionAll') && message.mentionAll)) {
+    if ('mentions' in message && message.mentions?.length) {
         const messageType = Object.keys(m)[0];
         const key = m[messageType];
-        if (key && 'contextInfo' in key) {
-            key.contextInfo = key.contextInfo || {};
-            if (message.mentions?.length) {
-                key.contextInfo.mentionedJid = message.mentions;
-            }
-            if (message.mentionAll) {
-                key.contextInfo.nonJidMentions = 1;
-            }
+        if ('contextInfo' in key && !!key.contextInfo) {
+            key.contextInfo.mentionedJid = message.mentions;
         }
         else if (key) {
             key.contextInfo = {
-                mentionedJid: message.mentions,
-                nonJidMentions: message.mentionAll ? 1 : 0
+                mentionedJid: message.mentions
             };
         }
     }
-    if (hasOptionalProperty(message, 'edit')) {
+    if ('edit' in message) {
         m = {
             protocolMessage: {
                 key: message.edit,
@@ -521,7 +462,7 @@ export const generateWAMessageContent = async (message, options) => {
             }
         };
     }
-    if (hasOptionalProperty(message, 'contextInfo') && !!message.contextInfo) {
+    if ('contextInfo' in message && !!message.contextInfo) {
         const messageType = Object.keys(m)[0];
         const key = m[messageType];
         if ('contextInfo' in key && !!key.contextInfo) {
@@ -531,22 +472,7 @@ export const generateWAMessageContent = async (message, options) => {
             key.contextInfo = message.contextInfo;
         }
     }
-    if (hasOptionalProperty(message, 'albumParentKey') && !!message.albumParentKey) {
-        m.messageContextInfo = {
-            ...m.messageContextInfo,
-            messageAssociation: {
-                associationType: WAProto.MessageAssociation.AssociationType.MEDIA_ALBUM,
-                parentMessageKey: message.albumParentKey
-            }
-        };
-    }
-    if (shouldIncludeReportingToken(m)) {
-        m.messageContextInfo = m.messageContextInfo || {};
-        if (!m.messageContextInfo.messageSecret) {
-            m.messageContextInfo.messageSecret = randomBytes(32);
-        }
-    }
-    return WAProto.Message.create(m);
+    return WAProto.Message.fromObject(m);
 };
 export const generateWAMessageFromContent = (jid, message, options) => {
     // set timestamp to now
@@ -560,12 +486,12 @@ export const generateWAMessageFromContent = (jid, message, options) => {
     const { quoted, userJid } = options;
     if (quoted && !isJidNewsletter(jid)) {
         const participant = quoted.key.fromMe
-            ? userJid // TODO: Add support for LIDs
+            ? userJid
             : quoted.participant || quoted.key.participant || quoted.key.remoteJid;
         let quotedMsg = normalizeMessageContent(quoted.message);
         const msgType = getContentType(quotedMsg);
         // strip any redundant properties
-        quotedMsg = proto.Message.create({ [msgType]: quotedMsg[msgType] });
+        quotedMsg = proto.Message.fromObject({ [msgType]: quotedMsg[msgType] });
         const quotedContent = quotedMsg[msgType];
         if (typeof quotedContent === 'object' && quotedContent && 'contextInfo' in quotedContent) {
             delete quotedContent.contextInfo;
@@ -600,7 +526,7 @@ export const generateWAMessageFromContent = (jid, message, options) => {
             //ephemeralSettingTimestamp: options.ephemeralOptions.eph_setting_ts?.toString()
         };
     }
-    message = WAProto.Message.create(message);
+    message = WAProto.Message.fromObject(message);
     const messageJSON = {
         key: {
             remoteJid: jid,
@@ -610,7 +536,7 @@ export const generateWAMessageFromContent = (jid, message, options) => {
         message: message,
         messageTimestamp: timestamp,
         messageStubParameters: [],
-        participant: isJidGroup(jid) || isJidStatusBroadcast(jid) ? userJid : undefined, // TODO: Add support for LIDs
+        participant: isJidGroup(jid) || isJidStatusBroadcast(jid) ? userJid : undefined,
         status: WAMessageStatus.PENDING
     };
     return WAProto.WebMessageInfo.fromObject(messageJSON);
@@ -654,10 +580,7 @@ export const normalizeMessageContent = (content) => {
             message?.documentWithCaptionMessage ||
             message?.viewOnceMessageV2 ||
             message?.viewOnceMessageV2Extension ||
-            message?.editedMessage ||
-            message?.associatedChildMessage ||
-            message?.groupStatusMessage ||
-            message?.groupStatusMessageV2);
+            message?.editedMessage);
     }
 };
 /**
@@ -739,13 +662,6 @@ export const updateMessageWithPollUpdate = (msg, update) => {
     }
     msg.pollUpdates = reactions;
 };
-/** Update the message with a new event response */
-export const updateMessageWithEventResponse = (msg, update) => {
-    const authorID = getKeyAuthor(update.eventResponseMessageKey);
-    const responses = (msg.eventResponses || []).filter(r => getKeyAuthor(r.eventResponseMessageKey) !== authorID);
-    responses.push(update);
-    msg.eventResponses = responses;
-};
 /**
  * Aggregates all poll updates in a poll.
  * @param msg the poll creation message
@@ -785,29 +701,6 @@ export function getAggregateVotesInPollMessage({ message, pollUpdates }, meId) {
     }
     return Object.values(voteHashMap);
 }
-/**
- * Aggregates all event responses in an event message.
- * @param msg the event creation message
- * @param meId your jid
- * @returns A list of response types & their responders
- */
-export function getAggregateResponsesInEventMessage({ eventResponses }, meId) {
-    const responseTypes = ['GOING', 'NOT_GOING', 'MAYBE'];
-    const responseMap = {};
-    for (const type of responseTypes) {
-        responseMap[type] = {
-            response: type,
-            responders: []
-        };
-    }
-    for (const update of eventResponses || []) {
-        const responseType = update.eventResponse || 'UNKNOWN';
-        if (responseType !== 'UNKNOWN' && responseMap[responseType]) {
-            responseMap[responseType].responders.push(getKeyAuthor(update.eventResponseMessageKey, meId));
-        }
-    }
-    return Object.values(responseMap);
-}
 /** Given a list of message keys, aggregates them by chat & sender. Useful for sending read receipts in bulk */
 export const aggregateMessageKeysNotFromMe = (keys) => {
     const keyMap = {};
@@ -833,8 +726,8 @@ const REUPLOAD_REQUIRED_STATUS = [410, 404];
 export const downloadMediaMessage = async (message, type, options, ctx) => {
     const result = await downloadMsg().catch(async (error) => {
         if (ctx &&
-            typeof error?.status === 'number' && // treat errors with status as HTTP failures requiring reupload
-            REUPLOAD_REQUIRED_STATUS.includes(error.status)) {
+            axios.isAxiosError(error) && // check if the message requires a reupload
+            REUPLOAD_REQUIRED_STATUS.includes(error.response?.status)) {
             ctx.logger.info({ key: message.key }, 'sending reupload media request...');
             // request reupload
             message = await ctx.reuploadRequest(message);
