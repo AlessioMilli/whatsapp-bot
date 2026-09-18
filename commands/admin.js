@@ -219,10 +219,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
+                        model: 'gemini-3.8-flash',
                         contents: query,
                     });
-                    await sock.sendMessage(chatJid, { text: `🌍 *Risultato Web*:\n${response.text}` }, { quoted: m });
+                    const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta generata.";
+                    await sock.sendMessage(chatJid, { text: `🌍 *Risultato Web*:\n${responseText}` }, { quoted: m });
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
                     await sock.sendMessage(chatJid, { text: "❌ Errore durante la richiesta all'API di Gemini. Controlla la chiave API." }, { quoted: m });
@@ -237,18 +238,27 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     await sock.sendMessage(chatJid, { text: "Ciao! Che tipo di funzione vorresti che Alessio aggiungesse al bot?" }, { quoted: m });
                     return true;
                 }
+                
+                let rispostaAi = `Ho ricevuto la tua richiesta: "${query}".`;
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
+                        model: 'gemini-3.8-flash',
                         contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". 
                         Tieni conto che il bot ha già comandi per: mute/unmute, warn, kick/rimuovi, promuovi/demuovi, tagall/tutti, poll, setname, blocco link, protezione, modalita offline/online, ricerca web tramite IA, gestione proprietari, pulizia gruppo (!masskick, !deletegroup) e impostazioni gruppo (approvazione, invitelink, ecc.).
                         Se la funzione richiesta esiste già o è già coperta da questi comandi, spiega gentilmente all'utente quale comando usare. Se invece non esiste, conferma che la proposta è stata inoltrata ad Alessio.`,
                     });
-                    await sock.sendMessage(chatJid, { text: `🤖 *Assistente IA (Alessio)*:\n${response.text}` }, { quoted: m });
+                    
+                    if (response && response.text) {
+                        rispostaAi = response.text;
+                    } else if (response && response.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        rispostaAi = response.candidates[0].content.parts[0].text;
+                    }
                 } catch (error) {
-                    await sock.sendMessage(chatJid, { text: `🤖 *Assistente IA (Alessio)*:\nHo ricevuto la tua richiesta: "${query}".` }, { quoted: m });
+                    console.error("Errore dettagliato Gemini AI:", error);
                 }
+
+                await sock.sendMessage(chatJid, { text: `🤖 *Assistente IA (Alessio)*:\n${rispostaAi}` }, { quoted: m });
 
                 if (!m.key.fromMe) {
                     const nomeUtente = m.pushName || sender.split('@')[0];
