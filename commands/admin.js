@@ -40,13 +40,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             sender = m.key.participant || chatJid;
         }
 
-        // Configurazioni globali iniziali
+        // Configurazioni globali iniziali (Chiave API preimpostata)
         global.linksEnabled = global.linksEnabled !== undefined ? global.linksEnabled : false;
         global.cooldownEnabled = global.cooldownEnabled !== undefined ? global.cooldownEnabled : false;
         global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
         global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
         global.botOwner = global.botOwner || OWNER_JID;
-        global.geminiApiKey = global.geminiApiKey || process.env.GEMINI_API_KEY;
+        global.geminiApiKey = global.geminiApiKey || "AQ.Ab8RN6KM0ueX86cDiau4euGb-jBJvQQsx6_z3zUE2S4jI3QveQ";
 
         const getTargetJid = () => {
             let targetJid = m.message?.extendedTextMessage?.contextInfo?.participant || m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
@@ -175,7 +175,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
 📌 Intelligenza Artificiale & Web:
 !web [domanda] / !cerca [domanda]* - Naviga sul web tramite le API di Google Gemini
-!setgeminiak [chiave]* - Imposta la chiave API di Google Gemini (Solo Proprietario)
+!setgeminiak [chiave]* - Imposta o aggiorna la chiave API di Google Gemini (Solo Proprietario)
 !chiedialessio / !aiutoalessio [proposta]* - Invia un suggerimento o richiesta ad Alessio
 
 📌 Gruppo & Sicurezza:
@@ -205,10 +205,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Invia subito il messaggio di verifica in corso
                 await sock.sendMessage(chatJid, { text: "🔄 Verifica in corso della chiave API, attendere prego..." }, { quoted: m });
 
-                // Salva la chiave e conferma il successo
                 global.geminiApiKey = key;
                 await sock.sendMessage(chatJid, { text: "✅ Chiave riconosciuta con successo! Ora potrai usare la funzione." }, { quoted: m });
                 return true;
@@ -222,7 +220,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Frase inviata a chi digita il comando mentre il bot elabora
                 const frasiAttesa = [
                     "Sto scavando nel web per trovare la risposta perfetta...",
                     "Analizzo i dati in tempo reale, un istante e ti dico tutto!",
@@ -236,7 +233,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-3.8-flash',
+                        model: 'gemini-2.5-flash',
                         contents: query,
                     });
                     const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta generata.";
@@ -260,7 +257,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-3.8-flash',
+                        model: 'gemini-2.5-flash',
                         contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". 
                         Tieni conto che il bot ha già comandi per: mute/unmute, warn, kick/rimuovi, promuovi/demuovi, tagall/tutti, poll, setname, blocco link, protezione, modalita offline/online, ricerca web tramite IA, gestione proprietari, pulizia gruppo (!masskick, !deletegroup) e impostazioni gruppo (approvazione, invitelink, ecc.).
                         Se la funzione richiesta esiste già o è già coperta da questi comandi, spiega gentilmente all'utente quale comando usare. Se invece non esiste, conferma che la proposta è stata inoltrata ad Alessio.`,
