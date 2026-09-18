@@ -233,14 +233,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: query,
+                        model: 'gemini-1.5-flash',
+                        contents: [{ role: 'user', parts: [{ text: query }] }],
                     });
-                    const responseText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta generata.";
+                    
+                    const responseText = response.text || (response.candidates && response.candidates[0]?.content?.parts[0]?.text) || "Nessuna risposta generata.";
                     await sock.sendMessage(chatJid, { text: `🌍 *Risultato Web*:\n${responseText}` }, { quoted: m });
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
-                    await sock.sendMessage(chatJid, { text: "❌ Errore durante la richiesta all'API di Gemini. Controlla la chiave API." }, { quoted: m });
+                    await sock.sendMessage(chatJid, { text: `❌ Errore API: ${error.message || "Controlla la chiave API."}` }, { quoted: m });
                 }
                 return true;
             }
@@ -257,10 +258,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". 
-                        Tieni conto che il bot ha già comandi per: mute/unmute, warn, kick/rimuovi, promuovi/demuovi, tagall/tutti, poll, setname, blocco link, protezione, modalita offline/online, ricerca web tramite IA, gestione proprietari, pulizia gruppo (!masskick, !deletegroup) e impostazioni gruppo (approvazione, invitelink, ecc.).
-                        Se la funzione richiesta esiste già o è già coperta da questi comandi, spiega gentilmente all'utente quale comando usare. Se invece non esiste, conferma che la proposta è stata inoltrata ad Alessio.`,
+                        model: 'gemini-1.5-flash',
+                        contents: [{ role: 'user', parts: [{ text: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". Tieni conto che il bot ha già comandi per la gestione utenti, gruppi e IA. Spiega gentilmente se esiste già o conferma l'inoltro.` }] }],
                     });
                     
                     if (response && response.text) {
