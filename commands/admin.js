@@ -224,7 +224,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     });
                     await sock.sendMessage(chatJid, { text: `🌍 *Risultato Web*:\n${response.text}` }, { quoted: m });
                 } catch (error) {
-                    await sock.sendMessage(chatJid, { text: "❌ Errore durante la richiesta all'API di Gemini." }, { quoted: m });
+                    console.error("Errore API Gemini:", error);
+                    await sock.sendMessage(chatJid, { text: "❌ Errore durante la richiesta all'API di Gemini. Controlla la chiave API." }, { quoted: m });
                 }
                 return true;
             }
@@ -240,7 +241,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     const response = await ai.models.generateContent({
                         model: 'gemini-2.5-flash',
-                        contents: `Agisci come l'assistente ufficiale di Alessio. Rispondi a questa richiesta di supporto o suggerimento in modo utile e amichevole: ${query}`,
+                        contents: `Analizza questa richiesta di una nuova funzione per un bot WhatsApp: "${query}". 
+                        Tieni conto che il bot ha già comandi per: mute/unmute, warn, kick/rimuovi, promuovi/demuovi, tagall/tutti, poll, setname, blocco link, protezione, modalita offline/online, ricerca web tramite IA, gestione proprietari, pulizia gruppo (!masskick, !deletegroup) e impostazioni gruppo (approvazione, invitelink, ecc.).
+                        Se la funzione richiesta esiste già o è già coperta da questi comandi, spiega gentilmente all'utente quale comando usare. Se invece non esiste, conferma che la proposta è stata inoltrata ad Alessio.`,
                     });
                     await sock.sendMessage(chatJid, { text: `🤖 *Assistente IA (Alessio)*:\n${response.text}` }, { quoted: m });
                 } catch (error) {
@@ -364,7 +367,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 warnings.set(targetMention, currentWarns);
 
                 if (currentWarns >= 3) {
-                    warnings.set(targetNotFound = targetMention, 0); // correzione sintattica sicura
                     warnings.set(targetMention, 0);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
                     await sock.sendMessage(chatJid, { text: `🚫 Utente bannato dopo il terzo avvertimento.` }, { quoted: m });
