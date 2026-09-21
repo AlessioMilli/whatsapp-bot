@@ -4,33 +4,30 @@ import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
 import { execute as adminExecute } from './commands/admin.js';
 
-// 1. Configurazione Server Express per UptimeRobot (24/7) e rotta QR Code web
+// 1. Configurazione Server Express per UptimeRobot (24/7) e rotta Pairing Code web
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-let latestQR = '';
+let pairingCodeDisplay = '';
 
 app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
 });
 
-// Rotta web per vedere il QR code pulito dal browser
+// Rotta web per vedere il codice di accoppiamento dal browser
 app.get('/qr', async (req, res) => {
-    if (!latestQR) {
-        return res.send('<h1>Nessun QR code generato o bot già connesso!</h1>');
+    if (!pairingCodeDisplay) {
+        return res.send('<h1>Nessun codice attivo o bot già connesso!</h1>');
     }
-    try {
-        const urlImage = await qrcode.toDataURL(latestQR);
-        res.send(`
-            <div style="text-align: center; margin-top: 50px;">
-                <h1>Scansiona il QR Code per WhatsApp</h1>
-                <img src="${urlImage}" alt="QR Code" style="width: 350px; height: 350px;" />
-                <p>Aggiorna la pagina se scade.</p>
+    res.send(`
+        <div style="text-align: center; margin-top: 50px; font-family: sans-serif;">
+            <h1>Codice di Accoppiamento WhatsApp</h1>
+            <div style="font-size: 40px; font-weight: bold; background: #f0f0f0; display: inline-block; padding: 20px 40px; border-radius: 10px; margin: 20px 0; letter-spacing: 3px;">
+                ${pairingCodeDisplay}
             </div>
-        `);
-    } catch (err) {
-        res.status(500).send('Errore nella generazione del QR code.');
-    }
+            <p>Vai su WhatsApp > Dispositivi collegati > Collega un dispositivo > Collega con il numero di telefono e inserisci questo codice.</p>
+        </div>
+    `);
 });
 
 app.listen(PORT, () => {
@@ -54,13 +51,26 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Gestione della connessione e del QR Code via web
+    // Gestione della connessione e richiesta del codice di accoppiamento se non registrato
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            latestQR = qr; // Salva la stringa del QR per la pagina web
-            console.log('📌 QR Code ricevuto e pronto sulla rotta /qr');
+        const { connection, lastDisconnect } = update;
+
+        if (!sock.authState.creds.registered) {
+            const phoneNumber = "393534467571"; // Il tuo numero di telefono
+            
+            setTimeout(async () => {
+                try {
+                    let code = await sock.requestPairingCode(phoneNumber);
+                    code = code?.match(/.{1,4}/g)?.join("-") || code;
+                    pairingCodeDisplay = code;
+                    
+                    console.log(`\n========================================`);
+                    console.log(`🔑 IL TUO CODICE DI ACCOPPIAMENTO È: ${code}`);
+                    console.log(`========================================\n`);
+                } catch (err) {
+                    console.error("Errore nella richiesta del codice di accoppiamento:", err);
+                }
+            }, 3000);
         }
 
         if (connection === 'close') {
@@ -72,7 +82,7 @@ async function startBot() {
                 startBot();
             }
         } else if (connection === 'open') {
-            latestQR = ''; // Reset del QR una volta connessi
+            pairingCodeDisplay = ''; // Reset del codice una volta connessi
             console.log('✅ Bot connesso e operativo con successo!');
         }
     });
