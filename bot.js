@@ -4,12 +4,33 @@ import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
 import { execute as adminExecute } from './commands/admin.js';
 
-// 1. Configurazione Server Express per UptimeRobot (24/7)
+// 1. Configurazione Server Express per UptimeRobot (24/7) e rotta QR Code web
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+let latestQR = '';
+
 app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
+});
+
+// Rotta web per vedere il QR code pulito dal browser del telefono o PC
+app.get('/qr', async (req, res) => {
+    if (!latestQR) {
+        return res.send('<h1>Nessun QR code generato o bot già connesso!</h1>');
+    }
+    try {
+        const urlImage = await qrcode.toDataURL(latestQR);
+        res.send(`
+            <div style="text-align: center; margin-top: 50px;">
+                <h1>Scansiona il QR Code per WhatsApp</h1>
+                <img src="${urlImage}" alt="QR Code" style="width: 300px; height: 300px;" />
+                <p>Aggiorna la pagina se scade.</p>
+            </div>
+        `);
+    } catch (err) {
+        res.status(500).send('Errore nella generazione del QR code.');
+    }
 });
 
 app.listen(PORT, () => {
@@ -33,11 +54,12 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Gestione della connessione e del QR Code come immagine PNG quadrata
+    // Gestione della connessione e del QR Code
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
+            latestQR = qr; // Salva il QR per la pagina web su Express
             console.log('📌 Generazione dell\'immagine del QR Code in corso...');
             
             // Salva il QR code come vera immagine PNG quadrata nella cartella del progetto
@@ -52,7 +74,7 @@ async function startBot() {
                     console.error('Errore nella generazione del file immagine del QR:', err);
                     return;
                 }
-                console.log('✅ Immagine "qrcode.png" generata con successo! Aprila per scansionarla.');
+                console.log('✅ Immagine "qrcode.png" generata con successo! Aprila per scansionarla o vai su /qr');
             });
         }
 
@@ -65,6 +87,7 @@ async function startBot() {
                 startBot();
             }
         } else if (connection === 'open') {
+            latestQR = ''; // Reset del QR una volta connessi
             console.log('✅ Bot connesso e operativo con successo!');
         }
     });
@@ -126,7 +149,7 @@ async function startBot() {
             // Controllo Antispam / Cooldown
             if (global.cooldownEnabled && !m.key.fromMe) {
                 const now = Date.now();
-                const lastMessageTime = userCooldowns.get(sender) || 0;
+                const lastMessageTime = userCooldowns.get(sender)  ||  0;
 
                 if (now - lastMessageTime < COOLDOWN_TIME) {
                     await sock.sendMessage(chatJid, { 
