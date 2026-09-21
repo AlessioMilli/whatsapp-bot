@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
 });
 
-// Rotta web per vedere il QR code pulito dal browser del telefono o PC
+// Rotta web per vedere il QR code pulito dal browser
 app.get('/qr', async (req, res) => {
     if (!latestQR) {
         return res.send('<h1>Nessun QR code generato o bot già connesso!</h1>');
@@ -24,7 +24,7 @@ app.get('/qr', async (req, res) => {
         res.send(`
             <div style="text-align: center; margin-top: 50px;">
                 <h1>Scansiona il QR Code per WhatsApp</h1>
-                <img src="${urlImage}" alt="QR Code" style="width: 300px; height: 300px;" />
+                <img src="${urlImage}" alt="QR Code" style="width: 350px; height: 350px;" />
                 <p>Aggiorna la pagina se scade.</p>
             </div>
         `);
@@ -49,33 +49,18 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false // Disattiva il terminale per usare l'immagine vera quadrata
+        printQRInTerminal: false
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Gestione della connessione e del QR Code
+    // Gestione della connessione e del QR Code via web
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            latestQR = qr; // Salva il QR per la pagina web su Express
-            console.log('📌 Generazione dell\'immagine del QR Code in corso...');
-            
-            // Salva il QR code come vera immagine PNG quadrata nella cartella del progetto
-            qrcode.toFile('./qrcode.png', qr, {
-                color: {
-                    dark: '#000000',  // Punti neri
-                    light: '#FFFFFF'  // Sfondo bianco
-                },
-                width: 300 // Dimensione dell'immagine in pixel (perfettamente quadrata)
-            }, (err) => {
-                if (err) {
-                    console.error('Errore nella generazione del file immagine del QR:', err);
-                    return;
-                }
-                console.log('✅ Immagine "qrcode.png" generata con successo! Aprila per scansionarla o vai su /qr');
-            });
+            latestQR = qr; // Salva la stringa del QR per la pagina web
+            console.log('📌 QR Code ricevuto e pronto sulla rotta /qr');
         }
 
         if (connection === 'close') {
@@ -149,7 +134,7 @@ async function startBot() {
             // Controllo Antispam / Cooldown
             if (global.cooldownEnabled && !m.key.fromMe) {
                 const now = Date.now();
-                const lastMessageTime = userCooldowns.get(sender)  ||  0;
+                const lastMessageTime = userCooldowns.get(sender) || 0;
 
                 if (now - lastMessageTime < COOLDOWN_TIME) {
                     await sock.sendMessage(chatJid, { 
