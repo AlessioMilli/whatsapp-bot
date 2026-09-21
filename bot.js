@@ -1,6 +1,7 @@
 import express from 'express';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
-import qrcode from 'qrcode-terminal';
+import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode';
 import { execute as adminExecute } from './commands/admin.js';
 
 // 1. Configurazione Server Express per UptimeRobot (24/7)
@@ -27,29 +28,44 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true
+        printQRInTerminal: false // Disattiva il terminale per usare l'immagine vera quadrata
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Gestione del QR Code tramite terminale
-    sock.ev.on('connection.update', (update) => {
+    // Gestione della connessione e del QR Code come immagine PNG quadrata
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log('\nScan il QR code qui sotto con WhatsApp:');
-            qrcode.generate(qr, { small: true });
+            console.log('📌 Generazione dell\'immagine del QR Code in corso...');
+            
+            // Salva il QR code come vera immagine PNG quadrata nella cartella del progetto
+            qrcode.toFile('./qrcode.png', qr, {
+                color: {
+                    dark: '#000000',  // Punti neri
+                    light: '#FFFFFF'  // Sfondo bianco
+                },
+                width: 300 // Dimensione dell'immagine in pixel (perfettamente quadrata)
+            }, (err) => {
+                if (err) {
+                    console.error('Errore nella generazione del file immagine del QR:', err);
+                    return;
+                }
+                console.log('✅ Immagine "qrcode.png" generata con successo! Aprila per scansionarla.');
+            });
         }
 
         if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output?.statusCode : lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            console.log(`Connessione chiusa. Codice: ${statusCode}. Riconnessione: ${shouldReconnect}`);
+            console.log(`⚠️ Connessione chiusa. Codice: ${statusCode}. Riconnessione: ${shouldReconnect}`);
+            
             if (shouldReconnect) {
                 startBot();
             }
         } else if (connection === 'open') {
-            console.log('🤖 Bot connesso con successo!');
+            console.log('✅ Bot connesso e operativo con successo!');
         }
     });
 
