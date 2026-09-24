@@ -17,8 +17,8 @@ const groupSettings = {
 };
 
 // Dati del proprietario principale
-const OWNER_JID = "3935344667571@s.whatsapp.net";
-const OWNER_PHONE = "+39 35344667571";
+const OWNER_JID = "393534467571@s.whatsapp.net";
+const OWNER_PHONE = "+39 3534467571";
 const OWNER_NAME = "@Alessio";
 
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
@@ -222,8 +222,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         switch (command) {
             case '!menu':
             case '!aiuto': {
-                const menuText = `Ecco la lista completa dei comandi disponibili per gestire tutto al meglio
+                const menuText = `Ecco la lista completa dei comandi disponibili per gestire tutto al meglio:
 
+Moderazione:
 !mute utente - Silenzia un utente localmente
 !unmute utente - Rimuove il muto all'utente
 !warn utente - Dà un avvertimento (tre uguali = ban)
@@ -239,7 +240,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 !quickdemote utente - Comando rapido per rimuovere i poteri di admin taggando l'utente
 !masskick o !svuotagruppo - Rimuove istantaneamente tutti i partecipanti dal gruppo
 !deletegroup o !eliminagruppo - Svuota ed elimina/abbandona le chat o gruppi
-!clearalltesto parola - Elimina tutti i messaggi per tutti che contengono una certa parola o corrispondenza in qualsiasi canale, bacheca o gruppo
+!clearalltesto parola - Elimina tutti i messaggi per tutti che contengono una certa parola
+
+Intelligenza Artificiale e Web:
+!web <testo> o !cerca <testo> - Esegue una ricerca web tramite Google Gemini AI
+!setgeminiak <chiave> - Imposta/aggiorna la chiave API di Google Gemini (Solo Proprietario)
+
+Supporto:
 !chiedialessio messaggio - Invia un messaggio o una domanda direttamente al proprietario in privata
 !aiutoalessio - Mostra il messaggio di supporto e aiuto del gruppo
 
@@ -249,12 +256,11 @@ Gruppo e Sicurezza:
 !setname nome - Cambia il nome del gruppo
 !lockinfo - Blocca le info del gruppo
 !unlockinfo - Sblocca le info del gruppo
-!link on - Attiva la cancellazione automatica dei link esterni
-!link off - Disattiva la cancellazione automatica dei link
+!link on/off - Attiva/disattiva la cancellazione automatica dei link esterni
 !cooldown on/off - Attiva/disattiva il limite di tempo antispam tra i comandi
 !offline o !assente - Attiva la modalità offline
-!online o !presente - Attiva la modalità offline
-!protezione on/off - Attiva/disattiva la protezione generale o su uno specifico utente
+!online o !presente - Attiva la modalità online
+!protezione on/off - Attiva/disattiva la protezione generale
 !gruppo on/off - Attiva/disattiva la risposta del bot in questo specifico gruppo
 !setowner utente - Promuove un utente a proprietario del bot
 !removeowner utente - Rimuove i poteri di proprietario a un utente`;
@@ -436,7 +442,7 @@ Gruppo e Sicurezza:
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
                     await sock.sendMessage(chatJid, { text: "Mi servono i poteri di admin per gestire il link d'invito" });
-                    return type;
+                    return true;
                 }
                 await sock.sendMessage(chatJid, { text: `Accesso tramite link di invito configurato su ${mode}` });
                 return true;
