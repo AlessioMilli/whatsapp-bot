@@ -46,23 +46,6 @@ async function ensureBotIsAdmin(sock, chatJid) {
     }
 }
 
-// Funzione per verificare se il mittente è il proprietario oppure un amministratore reale nel gruppo
-async function isActualAdminOrOwner(sock, chatJid, sender) {
-    if (sender === OWNER_JID || sender.includes('3534467571') || isOwner(sender, sock)) {
-        return true;
-    }
-    if (chatJid && chatJid.endsWith('@g.us')) {
-        try {
-            const metadata = await sock.groupMetadata(chatJid);
-            const participant = metadata.participants.find(p => p.id === sender || p.id.includes(sender.split('@')[0]));
-            return participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
-        } catch (e) {
-            return false;
-        }
-    }
-    return false;
-}
-
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
     try {
         if (!chatJid) {
@@ -288,10 +271,6 @@ Gruppo e Sicurezza:
 
             // --- SEZIONE 1: MODERAZIONE AVANZATA ---
             case '!mute': {
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 if (!targetMention) {
                     await sock.sendMessage(chatJid, { text: "Ricordati di taggare la persona che vuoi mutare" });
                     return true;
@@ -302,10 +281,6 @@ Gruppo e Sicurezza:
             }
 
             case '!unmute': {
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 if (!targetMention) return true;
                 mutedUsers.delete(targetMention);
                 await sock.sendMessage(chatJid, { text: `L'utente è stato smutato può tornare a scrivere`, mentions: [targetMention] });
@@ -313,10 +288,6 @@ Gruppo e Sicurezza:
             }
 
             case '!warn': {
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 if (!targetMention) return true;
                 const currentWarns = (warnings.get(targetMention) || 0) + 1;
                 warnings.set(targetMention, currentWarns);
@@ -347,10 +318,6 @@ Gruppo e Sicurezza:
             case '!rimuovi':
             case '!kick': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 if (!targetMention) return true;
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -364,10 +331,6 @@ Gruppo e Sicurezza:
 
             case '!promuovi': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 if (!targetMention) return true;
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -382,10 +345,6 @@ Gruppo e Sicurezza:
             case '!demuovi':
             case '!quickdemote': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 if (!targetMention) return true;
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -399,10 +358,6 @@ Gruppo e Sicurezza:
 
             case '!multidemote': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const targets = getAllMentionedJids();
                 if (targets.length === 0) {
                     await sock.sendMessage(chatJid, { text: "Devi taggare almeno un utente per procedere" });
@@ -420,10 +375,6 @@ Gruppo e Sicurezza:
 
             case '!editgroup': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const mode = args[1];
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -442,10 +393,6 @@ Gruppo e Sicurezza:
 
             case '!approva': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const mode = args[1];
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -461,10 +408,6 @@ Gruppo e Sicurezza:
 
             case '!addmember': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const mode = args[1];
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -480,10 +423,6 @@ Gruppo e Sicurezza:
 
             case '!history': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const mode = args[1];
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -499,10 +438,6 @@ Gruppo e Sicurezza:
 
             case '!invitelink': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const mode = args[1];
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
@@ -516,10 +451,6 @@ Gruppo e Sicurezza:
             case '!masskick':
             case '!svuotagruppo': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
                     await sock.sendMessage(chatJid, { text: "Impossibile svuotare il gruppo perché non sono amministratore" });
@@ -542,10 +473,6 @@ Gruppo e Sicurezza:
             case '!deletegroup':
             case '!eliminagruppo': {
                 if (!isGroup) return true;
-                if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                    return true;
-                }
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
                     await sock.sendMessage(chatJid, { text: "Non posso eliminare il gruppo senza essere amministratore" });
@@ -589,12 +516,24 @@ Gruppo e Sicurezza:
                 }
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
-                    });
-                    const responseText = response.text || "Nessuna risposta generata.";
-                    await sock.sendMessage(chatJid, { text: responseText });
+                    let responseText = "";
+                    
+                    try {
+                        const response = await ai.models.generateContent({
+                            model: 'gemini-3.8-flash',
+                            contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
+                        });
+                        responseText = response.text;
+                    } catch (primaryErr) {
+                        const fallbackResponse = await ai.models.generateContent({
+                            model: 'gemini-2.5-flash',
+                            contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
+                        });
+                        responseText = fallbackResponse.text;
+                    }
+
+                    const finalResponse = responseText || "Nessuna risposta generata.";
+                    await sock.sendMessage(chatJid, { text: finalResponse });
                 } catch (err) {
                     console.error("Errore Gemini API:", err);
                     await sock.sendMessage(chatJid, { text: "Si è verificato un piccolo problema di connessione con intelligenza artificiale riprova più tardi" });
@@ -666,10 +605,6 @@ Gruppo e Sicurezza:
 
             case '!setname': {
                 if (isGroup) {
-                    if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                        await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                        return true;
-                    }
                     const newName = messageText.replace(/^!setname/i, '').trim();
                     if (!newName) {
                         groupSettings.waitingForSetName.add(sender);
@@ -689,10 +624,6 @@ Gruppo e Sicurezza:
 
             case '!lockinfo': {
                 if (isGroup) {
-                    if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                        await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                        return true;
-                    }
                     const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                     if (!botAdmin) {
                         await sock.sendMessage(chatJid, { text: "Non ho i permessi per bloccare le informazioni del gruppo" });
@@ -706,10 +637,6 @@ Gruppo e Sicurezza:
 
             case '!unlockinfo': {
                 if (isGroup) {
-                    if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                        await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                        return true;
-                    }
                     const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                     if (!botAdmin) {
                         await sock.sendMessage(chatJid, { text: "Mi servono i poteri di admin per sbloccare le informazioni" });
@@ -723,10 +650,6 @@ Gruppo e Sicurezza:
 
             case '!link': {
                 if (isGroup) {
-                    if (!(await isActualAdminOrOwner(sock, chatJid, sender))) {
-                        await sock.sendMessage(chatJid, { text: "Non puoi usare questo comando perché non risulti amministratore autorizzato" });
-                        return true;
-                    }
                     const action = args[1];
                     if (action === 'on') {
                         groupSettings.linkFilter = true;
