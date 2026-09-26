@@ -127,10 +127,30 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         
         if (!messageText) return false;
 
-        // Controllo utenti mutati localmente (Cancellazione istantanea)
-        if (isGroup && mutedUsers.has(sender)) {
-            await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
+        // Controllo utenti mutati localmente (Cancellazione istantanea del messaggio e del nome)
+        if (isGroup && mutedUsers.has(sender) && !m.key.fromMe) {
+            try {
+                await sock.sendMessage(chatJid, { delete: m.key });
+            } catch (err) {
+                console.error("Impossibile cancellare il messaggio dell'utente mutato:", err);
+            }
             return true;
+        }
+
+        // Filtro link esterni (!link on) - Cancellazione istantanea nello specifico gruppo
+        if (isGroup && groupSettings.linkFilter && !m.key.fromMe) {
+            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][-a-zA-Z0-90-9]{0,62}\.(com|it|net|org|edu|gov|mil|biz|info|mobi|name|aero|jobs|museum|me|cc|tv|co|us|uk|de|fr|es|nl|eu)[^\s]*)/gi;
+            if (urlRegex.test(messageText)) {
+                try {
+                    await sock.sendMessage(chatJid, { delete: m.key });
+                    await sock.sendMessage(chatJid, { 
+                        text: `Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso al capo` 
+                    });
+                } catch (err) {
+                    console.error("Impossibile eliminare il link:", err);
+                }
+                return true;
+            }
         }
 
         const args = messageText.trim().split(/ +/);
@@ -191,18 +211,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
             }
             return true;
-        }
-
-        // Filtro link esterni (!link on)
-        if (isGroup && groupSettings.linkFilter && !isOwner(sender, sock)) {
-            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
-            if (urlRegex.test(messageText)) {
-                await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
-                await sock.sendMessage(chatJid, { 
-                    text: `Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso al capo` 
-                });
-                return true;
-            }
         }
 
         // Gestione offline in chat privata: risponde rigorosamente SOLO se l'utente invia un messaggio e tu sei offline
