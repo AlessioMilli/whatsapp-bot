@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
@@ -14,7 +15,7 @@ app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
 });
 
-// Rotta web per visualizzare il QR code grafico dal browser (senza link testuale)
+// Rotta web per visualizzare il QR code grafico dal browser
 app.get('/qr', async (req, res) => {
     if (!qrCodeDataURL) {
         return res.send('<h1>Nessun QR code attivo o bot già connesso!</h1>');
@@ -42,11 +43,20 @@ const userCooldowns = new Map();
 const COOLDOWN_TIME = 5000; // Tempo di attesa in millisecondi (5 secondi)
 
 async function startBot() {
+    // Pulisce automaticamente la sessione a ogni avvio per evitare blocchi e forzare un nuovo QR
+    if (fs.existsSync('auth_info_baileys')) {
+        try {
+            fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+            console.log("🧹 Vecchia sessione pulita automaticamente con successo.");
+        } catch (err) {
+            console.error("Impossibile rimuovere la cartella di sessione:", err);
+        }
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true // Mostra il QR code direttamente anche nel terminale
+        auth: state
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -59,7 +69,7 @@ async function startBot() {
         if (qr) {
             try {
                 qrCodeDataURL = await qrcode.toDataURL(qr);
-                console.log("🔥 Nuovo QR Code generato con successo!");
+                console.log("🔥 Nuovo QR Code grafico generato con successo per il browser!");
             } catch (err) {
                 console.error("Errore nella generazione del QR code grafico:", err);
             }
