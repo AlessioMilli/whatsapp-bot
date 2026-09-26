@@ -6,6 +6,9 @@ const mutedUsers = new Set();
 const warnings = new Map(); // key: userId, value: count
 const cooldowns = new Map(); // key: userId, value: timestamp
 
+// Mappe per tracciare se l'utente è già stato avvisato del cambio stato (online)
+const notifiedOnline = new Set();
+
 // Configurazioni di stato del gruppo e globali
 const groupSettings = {
     linkFilter: false,
@@ -202,10 +205,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // Gestione offline in chat privata
+        // Gestione offline in chat privata: risponde rigorosamente SOLO se l'utente invia un messaggio e tu sei offline
         if (!isGroup && global.offlineMode && !isOwner(sender, sock) && !m.key.fromMe) {
-            await sock.sendMessage(chatJid, { text: "Al momento Alessio non può risponderti perché è offline ti scriverà non appena torna disponibile" }, { quoted: m });
+            await sock.sendMessage(chatJid, { text: "Alessio al momento non è disponibile ti risponderà appena rientra nella tua chat" }, { quoted: m });
             return true;
+        }
+
+        // Gestione online in chat privata: avvisa l'utente al primo messaggio dopo che hai premuto online
+        if (!isGroup && !global.offlineMode && !isOwner(sender, sock) && !m.key.fromMe) {
+            if (!notifiedOnline.has(sender)) {
+                notifiedOnline.add(sender);
+                await sock.sendMessage(chatJid, { text: "Alessio è ora ritornato online" }, { quoted: m });
+            }
         }
 
         // --- Protezione Proprietario su comandi di moderazione ---
@@ -666,6 +677,7 @@ Gruppo e Sicurezza:
             case '!assente': {
                 if (isOwner(sender, sock)) {
                     global.offlineMode = true;
+                    notifiedOnline.clear(); // Pulisce lo storico online per prepararsi al prossimo rientro
                     await sock.sendMessage(chatJid, { text: "Modalità offline attivata con successo" });
                 }
                 return true;
@@ -675,7 +687,8 @@ Gruppo e Sicurezza:
             case '!presente': {
                 if (isOwner(sender, sock)) {
                     global.offlineMode = false;
-                    await sock.sendMessage(chatJid, { text: "Bentornato modalità online riattivata" });
+                    notifiedOnline.clear(); // Svuota la lista così il prossimo rientro manderà l'avviso di ritorno
+                    await sock.sendMessage(chatJid, { text: "Modalità online attivata con successo" });
                 }
                 return true;
             }
