@@ -59,6 +59,7 @@ async function startBot() {
         if (qr) {
             try {
                 qrCodeDataURL = await qrcode.toDataURL(qr);
+                console.log("🔥 Nuovo QR Code generato con successo!");
             } catch (err) {
                 console.error("Errore nella generazione del QR code grafico:", err);
             }
