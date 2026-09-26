@@ -122,36 +122,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (!messageText) {
             messageText = m.message?.conversation || 
                         m.message?.extendedTextMessage?.text || 
-                        m.message?.imageMessage?.caption || '';
-        }
-        
-        if (!messageText) return false;
-
-        // Controllo utenti mutati localmente (Cancellazione istantanea del messaggio e del nome)
-        if (isGroup && mutedUsers.has(sender) && !m.key.fromMe) {
-            try {
-                await sock.sendMessage(chatJid, { delete: m.key });
-            } catch (err) {
-                console.error("Impossibile cancellare il messaggio dell'utente mutato:", err);
-            }
-            return true;
+                        m.message?.imageMessage?.caption || 
+                        m.message?.audioMessage ? "[Messaggio Vocale]" : '';
         }
 
-        // Filtro link esterni (!link on) - Cancellazione istantanea nello specifico gruppo
-        if (isGroup && groupSettings.linkFilter && !m.key.fromMe) {
-            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9][-a-zA-Z0-90-9]{0,62}\.(com|it|net|org|edu|gov|mil|biz|info|mobi|name|aero|jobs|museum|me|cc|tv|co|us|uk|de|fr|es|nl|eu)[^\s]*)/gi;
-            if (urlRegex.test(messageText)) {
+        // Controllo utenti mutati migliorato (Verifica JID esatto o numero pulito)
+        if (isGroup && !m.key.fromMe) {
+            const senderClean = sender.split('@')[0];
+            const isMuted = mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean);
+            
+            if (isMuted) {
                 try {
                     await sock.sendMessage(chatJid, { delete: m.key });
-                    await sock.sendMessage(chatJid, { 
-                        text: `Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso al capo` 
-                    });
                 } catch (err) {
-                    console.error("Impossibile eliminare il link:", err);
+                    console.error("Impossibile cancellare il messaggio dell'utente mutato:", err);
                 }
                 return true;
             }
         }
+
+        if (!messageText) return false;
 
         const args = messageText.trim().split(/ +/);
         const command = args[0].toLowerCase();
@@ -211,6 +201,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
             }
             return true;
+        }
+
+        // Filtro link esterni (!link on)
+        if (isGroup && groupSettings.linkFilter && !isOwner(sender, sock)) {
+            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+            if (urlRegex.test(messageText)) {
+                await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
+                await sock.sendMessage(chatJid, { 
+                    text: `Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso al capo` 
+                });
+                return true;
+            }
         }
 
         // Gestione offline in chat privata: risponde rigorosamente SOLO se l'utente invia un messaggio e tu sei offline
@@ -301,7 +303,12 @@ Gruppo e Sicurezza:
 
             case '!unmute': {
                 if (!targetMention) return true;
-                mutedUsers.delete(targetMention);
+                const targetClean = targetMention.split('@')[0];
+                for (let u of mutedUsers) {
+                    if (u === targetMention || u.split('@')[0] === targetClean) {
+                        mutedUsers.delete(u);
+                    }
+                }
                 await sock.sendMessage(chatJid, { text: `L'utente è stato smutato può tornare a scrivere`, mentions: [targetMention] });
                 return true;
             }
