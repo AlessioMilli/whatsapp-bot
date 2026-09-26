@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
 });
 
-// Rotta web per visualizzare il QR code grafico dal browser
+// Rotta web per visualizzare il QR code grafico dal browser (senza link testuale)
 app.get('/qr', async (req, res) => {
     if (!qrCodeDataURL) {
         return res.send('<h1>Nessun QR code attivo o bot già connesso!</h1>');
