@@ -230,7 +230,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         // --- Protezione Proprietario su comandi di moderazione ---
-        if (targetMention && isOwner(targetMention, sock) && ['!mute', '!warn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
+        if (targetMention && isOwner(targetMention, sock) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
             if (global.protectionEnabled) {
                 await sock.sendMessage(chatJid, { text: "Non puoi assolutamente toccare il creatore del bot perché è protetto da me" });
             } else {
@@ -248,7 +248,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 Moderazione:
 !mute utente - Silenzia un utente localmente
 !unmute utente - Rimuove il muto all'utente
-!warn utente - Dà un avvertimento (tre uguali = ban)
+!warn o !wuarn utente - Dà un avvertimento (tre uguali = ban)
 !rimuovi o !kick utente - Espelle dal gruppo
 !promuovi utente - Rende amministratore
 !demuovi utente - Toglie i poteri di admin
@@ -313,7 +313,8 @@ Gruppo e Sicurezza:
                 return true;
             }
 
-            case '!warn': {
+            case '!warn':
+            case '!wuarn': {
                 if (!targetMention) return true;
                 const currentWarns = (warnings.get(targetMention) || 0) + 1;
                 warnings.set(targetMention, currentWarns);
