@@ -6,7 +6,7 @@ const mutedUsers = new Set();
 const warnings = new Map(); // key: userId, value: count
 const cooldowns = new Map(); // key: userId, value: timestamp
 
-// Mappe per tracciare se l'utente è già stato avvisato del cambio stato (online)
+// Mappe per tracciare se l'utente è già stato avvisato del cambio stato (online/offline)
 const notifiedOnline = new Set();
 
 // Configurazioni di stato del gruppo e globali
@@ -221,11 +221,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return true;
         }
 
-        // Gestione online in chat privata: avvisa l'utente al primo messaggio dopo che hai premuto online
+        // Gestione online in chat privata: avvisa l'utente al primo messaggio dopo che hai premuto online dicendo che è ritornato operativo
         if (!isGroup && !global.offlineMode && !isOwner(sender, sock) && !m.key.fromMe) {
             if (!notifiedOnline.has(sender)) {
                 notifiedOnline.add(sender);
-                await sock.sendMessage(chatJid, { text: "Alessio è ora ritornato online" }, { quoted: m });
+                await sock.sendMessage(chatJid, { text: "Alessio è ritornato operativo sulla tua chat" }, { quoted: m });
             }
         }
 
@@ -693,7 +693,7 @@ Gruppo e Sicurezza:
             case '!assente': {
                 if (isOwner(sender, sock)) {
                     global.offlineMode = true;
-                    notifiedOnline.clear(); // Pulisce lo storico online per prepararsi al prossimo rientro
+                    notifiedOnline.clear(); // Pulisce lo storico così al prossimo online avviserà nuovamente
                     await sock.sendMessage(chatJid, { text: "Modalità offline attivata con successo" });
                 }
                 return true;
@@ -703,7 +703,7 @@ Gruppo e Sicurezza:
             case '!presente': {
                 if (isOwner(sender, sock)) {
                     global.offlineMode = false;
-                    notifiedOnline.clear(); // Svuota la lista così il prossimo rientro manderà l'avviso di ritorno
+                    notifiedOnline.clear(); // Svuota la lista così il primo messaggio invierà l'avviso di ritorno operativo
                     await sock.sendMessage(chatJid, { text: "Modalità online attivata con successo" });
                 }
                 return true;
@@ -758,7 +758,7 @@ Gruppo e Sicurezza:
                     if (targetMention) {
                         global.extraOwners.delete(targetMention);
                         global.protectedUsers.delete(targetMention);
-                        await sock.sendMessage(chatJid, { text: "Ruolo di proprietario rimosso correttamente" });
+                        await sock.sendMessage(chatJid, { text: "Rule di proprietario rimosso correttamente" });
                     } else {
                         await sock.sendMessage(chatJid, { text: "Tagga un utente per rimuovere i poteri" });
                     }
