@@ -1,3 +1,162 @@
+import express from 'express';
+import fs from 'fs';
+import readline from 'readline';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode';
+import { execute as adminExecute } from './commands/admin.js';
+
+// 1. Configurazione Server Express per UptimeRobot (24/7) e rotta QR Code web
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+let qrCodeDataURL = '';
+
+app.get('/', (req, res) => {
+    res.status(200).send('Bot attivo e online!');
+});
+
+// Rotta web per visualizzare il QR code grafico dal browser
+app.get('/qr', async (req, res) => {
+    if (!qrCodeDataURL) {
+        return res.send('<h1>Nessun QR code attivo o bot già connesso!</h1>');
+    }
+    res.send(`
+        <div style="text-align: center; margin-top: 50px; font-family: sans-serif;">
+            <h1>Scansiona il QR Code per accedere a WhatsApp</h1>
+            <div style="margin: 20px 0;">
+                <img src="${qrCodeDataURL}" alt="WhatsApp QR Code" style="border: 10px solid white; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);" />
+            </div>
+            <p>Apri WhatsApp sul tuo telefono > Dispositivi collegati > Collega un dispositivo e inquadra questo QR code.</p>
+        </div>
+    `);
+});
+
+app.listen(PORT, () => {
+    console.log(`Server Express in ascolto sulla porta ${PORT}`);
+});
+
+const mutedUsers = new Set();
+const warnings = new Map();
+
+// Mappa per tracciare il cooldown antispam degli utenti
+const userCooldowns = new Map();
+const COOLDOWN_TIME = 5000; // Tempo di attesa in millisecondi (5 secondi)
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false
+    });
+
+    // Gestione del pairing code (codice di accoppiamento da terminale) se non è già registrato
+    if (!sock.authState.creds.registered) {
+        const usePairingCode = await askQuestion('Vuoi connetterti tramite Codice di Accoppiamento (pairing code) da terminale? (s/n): ');
+        if (usePairingCode.toLowerCase() === 's' || usePairingCode.toLowerCase() === 'si') {
+            const phoneNumber = await askQuestion('Inserisci il tuo numero di telefono con prefisso internazionale (es. 393534467571): ');
+            try {
+                let cleanedNumber = phoneNumber.replace(/[^0-9]/g, '');
+                setTimeout(async () => {
+                    const code = await sock.requestPairingCode(cleanedNumber);
+                    console.log(`\n========================================`);
+                    console.log(`🔑 IL TUO CODICE DI ACCOPPIAMENTO È: ${code}`);
+                    console.log(`========================================\n`);
+                    console.log(`Inseriscilo su WhatsApp andando su: Dispositivi collegati -> Collega un dispositivo -> Collega con il numero di telefono.\n`);
+                }, 3000);
+            } catch (err) {
+                console.error('Errore durante la richiesta del codice di accoppiamento:', err);
+            }
+        }
+    }
+
+    sock.ev.on('creds.update', saveCreds);
+
+    // Gestione della connessione e generazione del QR code grafico
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        // Se riceve una stringa QR, la converte in un'immagine Data URL per il browser
+        if (qr) {
+            try {
+                qrCodeDataURL = await qrcode.toDataURL(qr);
+                console.log("🔥 Nuovo QR Code grafico generato con successo per il browser (visibile su /qr)!");
+            } catch (err) {
+                console.error("Errore nella generazione del QR code grafico:", err);
+            }
+        }
+
+        if (connection === 'close') {
+            const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output?.statusCode : lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            console.log(`⚠️ Connessione chiusa. Codice: ${statusCode}. Riconnessione: ${shouldReconnect}`);
+            
+            if (shouldReconnect) {
+                startBot();
+            }
+        } else if (connection === 'open') {
+            qrCodeDataURL = ''; // Reset del QR code una volta connessi
+            console.log('✅ Bot connesso e operativo con successo!');
+            rl.close();
+        }
+    });
+
+    // Ascolto degli eventi sui partecipanti (benvenuto automatico gestito direttamente in admin.js)
+    sock.ev.on('group-participants.update', async (event) => {
+        try {
+            if (event.action === 'add') {
+                const fakeStubMsg = {
+                    key: {
+                        remoteJid: event.id,
+                        fromMe: false,
+                        participant: event.participants[0]
+                    },
+                    messageStubType: 27,
+                    messageStubParameters: event.participants
+                };
+                await adminExecute(sock, fakeStubMsg, event.id, '', event.participants[0], true);
+            }
+        } catch (err) {
+            console.error('Errore nella gestione dei partecipanti:', err);
+        }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        try {
+            const m = messages[0];
+            if (!m || !m.message) return;
+
+            const chatJid = m.key.remoteJid;
+            if (!chatJid) return;
+
+            // Se il messaggio NON è inviato da te, blocca canali, newsletter e bacheche
+            if (!m.key.fromMe) {
+                if (chatJid.endsWith('@newsletter') || chatJid.includes('@broadcast') || chatJid.includes('@lid')) {
+                    return;
+                }
+            }
+
+            const isGroup = chatJid.endsWith('@g.us');
+            const ownerJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : "393534467571@s.whatsapp.net";
+
+            // Assegnazione sicura del mittente
+            let sender = m.key.fromMe ? ownerJid : (isGroup ? m.key.participant : chatJid);
+            if (!sender) sender = ownerJid;
+
+            const messageText = m.message.conversation || 
+                                m.message.extendedTextMessage?.text || 
+                                m.message.imageMessage?.caption || '';
+
+            // RISPOSTA AUTOMATICA OFFLINE
+            if (!isGroup && global.offlineMode && !m.key.fromMe && chatJid !== sock.user?.id) {
                 await sock.sendMessage(chatJid, { 
                     text: "Al momento Alessio non è disponibile. Ti risponderà appena rientra nella chat." 
                 }, { quoted: m });
