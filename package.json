@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "main": "bot.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node bot.js"
   },
