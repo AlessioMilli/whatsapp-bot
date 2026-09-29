@@ -4,7 +4,7 @@
   "type": "module",
   "main": "bot.js",
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.12.2"
   },
   "scripts": {
     "start": "node bot.js"
