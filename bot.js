@@ -2,33 +2,14 @@ import express from 'express';
 import fs from 'fs';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode';
 import { execute as adminExecute } from './commands/admin.js';
 
-// 1. Configurazione Server Express per UptimeRobot (24/7) e rotta QR Code web
+// 1. Configurazione Server Express per UptimeRobot (24/7)
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-let qrCodeDataURL = '';
-
 app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
-});
-
-// Rotta web per visualizzare il QR code grafico dal browser
-app.get('/qr', async (req, res) => {
-    if (!qrCodeDataURL) {
-        return res.send('<h1>Nessun QR code attivo o bot già connesso!</h1>');
-    }
-    res.send(`
-        <div style="text-align: center; margin-top: 50px; font-family: sans-serif;">
-            <h1>Scansiona il QR Code per accedere a WhatsApp</h1>
-            <div style="margin: 20px 0;">
-                <img src="${qrCodeDataURL}" alt="WhatsApp QR Code" style="border: 10px solid white; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1);" />
-            </div>
-            <p>Apri WhatsApp sul tuo telefono > Dispositivi collegati > Collega un dispositivo e inquadra questo QR code.</p>
-        </div>
-    `);
 });
 
 app.listen(PORT, () => {
@@ -37,6 +18,9 @@ app.listen(PORT, () => {
 
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 5000;
+
+// INSERISCI QUI IL TUO NUMERO DI TELEFONO CON IL PREFISSO (es. 393534467571)
+const PHONE_NUMBER = "393534467571"; 
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -48,18 +32,24 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Gestione della connessione e generazione del QR code grafico
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (qr) {
+    // Se non è registrato, genera il codice di accoppiamento
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
             try {
-                qrCodeDataURL = await qrcode.toDataURL(qr);
-                console.log("🔥 Nuovo QR Code grafico generato con successo per il browser (visibile su /qr)!");
+                let phoneNumber = PHONE_NUMBER.replace(/[^0-9]/g, '');
+                let code = await sock.requestPairingCode(phoneNumber);
+                console.log(`\n========================================`);
+                console.log(`🔥 IL TUO CODICE DI ACCOPPIAMENTO È: ${code}`);
+                console.log(`========================================\n`);
             } catch (err) {
-                console.error("Errore nella generazione del QR code grafico:", err);
+                console.error("Errore nella generazione del codice di accoppiamento:", err);
             }
-        }
+        }, 3000);
+    }
+
+    // Gestione della connessione
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output?.statusCode : lastDisconnect?.error?.output?.statusCode;
@@ -70,7 +60,6 @@ async function startBot() {
                 startBot();
             }
         } else if (connection === 'open') {
-            qrCodeDataURL = '';
             console.log('✅ Bot connesso e operativo con successo!');
         }
     });
