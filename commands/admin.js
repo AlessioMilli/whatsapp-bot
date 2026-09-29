@@ -86,10 +86,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         const getTargetJid = () => {
             let targetJid = m.message?.extendedTextMessage?.contextInfo?.participant || m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!targetJid) {
-                const query = messageText.split(' ')[1];
-                if (query) {
-                    let cleanQuery = query.startsWith('@') ? query.slice(1) : query;
+            if (!targetJid && messageText) {
+                const parts = messageText.trim().split(/ +/);
+                if (parts[1]) {
+                    let cleanQuery = parts[1].startsWith('@') ? parts[1].slice(1) : parts[1];
                     targetJid = cleanQuery.includes('@') ? cleanQuery : cleanQuery + '@s.whatsapp.net';
                 }
             }
@@ -98,7 +98,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         const getAllMentionedJids = () => {
             let mentions = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-            if (mentions.length === 0) {
+            if (mentions.length === 0 && messageText) {
                 const parts = messageText.trim().split(/ +/).slice(1);
                 for (let p of parts) {
                     let clean = p.startsWith('@') ? p.slice(1) : p;
@@ -137,7 +137,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             messageText = m.message?.conversation || 
                         m.message?.extendedTextMessage?.text || 
                         m.message?.imageMessage?.caption || 
-                        m.message?.audioMessage ? "[Messaggio Vocale]" : '';
+                        (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
         // Controllo utenti mutati perpetui
@@ -330,7 +330,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄️ - Esegue una pulizia automatica del database e dei warn obsoleti
+9. \`!cleandb\` 🗄️️ - Esegue una pulizia automatica del database e dei warn obsoleti
 10. \`!leavegroup\` 🚪 - Forza il bot ad abbandonare il gruppo attuale`;
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -401,8 +401,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!rimuovi':
             case '!kick': {
-                if (!isGroup) return true;
-                if (!targetMention) return true;
+                if (!isGroup || !targetMention) return true;
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
                     await sock.sendMessage(chatJid, { text: "❌ Non posso rimuovere nessuno senza i permessi da amministratore" });
@@ -477,8 +476,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             // --- SEZIONE 2: GESTIONE AMMINISTRATORI E PERMESSI GRUPPO ---
             case '!promuovi': {
-                if (!isGroup) return true;
-                if (!targetMention) return true;
+                if (!isGroup || !targetMention) return true;
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
                     await sock.sendMessage(chatJid, { text: "❌ Impossibile promuovere l'utente perché il bot non è admin" });
@@ -493,8 +491,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!demuovi':
             case '!quickdemote': {
-                if (!isGroup) return true;
-                if (!targetMention) return true;
+                if (!isGroup || !targetMention) return true;
                 const botAdmin = await ensureBotIsAdmin(sock, chatJid);
                 if (!botAdmin) {
                     await sock.sendMessage(chatJid, { text: "❌ Non posso togliere i poteri perché non sono admin" });
@@ -620,16 +617,20 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     
                     try {
                         const response = await ai.models.generateContent({
-                            model: 'gemini-3.8-flash',
+                            model: 'gemini-2.5-flash',
                             contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
                         });
                         responseText = response.text;
                     } catch (primaryErr) {
-                        const fallbackResponse = await ai.models.generateContent({
-                            model: 'gemini-2.5-flash',
-                            contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
-                        });
-                        responseText = fallbackResponse.text;
+                        try {
+                            const fallbackResponse = await ai.models.generateContent({
+                                model: 'gemini-1.5-flash',
+                                contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
+                            });
+                            responseText = fallbackResponse.text;
+                        } catch (secErr) {
+                            throw secErr;
+                        }
                     }
 
                     const finalResponse = responseText || "Nessuna risposta generata.";
@@ -850,7 +851,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     if (targetMention) {
                         global.extraOwners.delete(targetMention);
                         global.protectedUsers.delete(targetMention);
-                        await sock.sendMessage(chatJid, { text: "🛡️️ Ruolo di proprietario rimosso correttamente" });
+                        await sock.sendMessage(chatJid, { text: "🛡️ Ruolo di proprietario rimosso correttamente" });
                     } else {
                         await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente per rimuovere i poteri" });
                     }
@@ -868,7 +869,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
                 const broadText = messageText.replace(/^!broadcast/i, '').trim();
                 if (!broadText) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il testo da inviare in broadcast" });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Inserisci il testo da inviare in broadcast" });
                     return true;
                 }
                 await sock.sendMessage(chatJid, { text: `📡 Broadcast avviato con successo per tutti i gruppi.` });
