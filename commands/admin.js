@@ -289,6 +289,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
 • \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
 • \`!multidemote @u1 @u2...\` 👥 - Rimuove i poteri di admin a più utenti insieme
+• \`!entra\` (o \`!unisciti\`) ➕ - Fa entrare automaticamente il bot nel gruppo tramite link d'invito[cite: 1]
 
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
@@ -308,7 +309,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
 💬 **SUPPORTO E BENVENUTO**
 • \`!commands\` (o \`!aiuto\`) 📖 - Mostra questo menu comandi
-• \`!chiedialessio [mess]\` ✉️️ - Invia una domanda diretta al supporto
+• \`!chiedialessio [mess]\` ✉️ - Invia una domanda diretta al supporto
 • \`!aiutoalessio\` 🛈 - Mostra il testo di assistenza ufficiale
 • \`!tagall\` (o \`!tutti\`) 📢 - Avviso con menzione di tutti i partecipanti
 • \`!poll [domanda] | [opz1] | [opz2]\` 📊 - Crea un sondaggio interattivo
@@ -330,7 +331,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄️️ - Esegue una pulizia automatica del database e dei warn obsoleti
+9. \`!cleandb\` 🗄️ - Esegue una pulizia automatica del database e dei warn obsoleti
 10. \`!leavegroup\` 🚪 - Forza il bot ad abbandonare il gruppo attuale`;
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -523,6 +524,27 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
+            case '!entra':
+            case '!unisciti': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
+                    return true;
+                }
+                if (!isGroup) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando va usato dentro a un gruppo" });
+                    return true;
+                }
+                try {
+                    const code = await sock.groupInviteCode(chatJid);
+                    await sock.groupAcceptInvite(code);
+                    await sock.sendMessage(chatJid, { text: "✅ Ho effettuato la richiesta di accesso al gruppo!" });
+                } catch (err) {
+                    console.error("Errore nell'unirsi al gruppo:", err);
+                    await sock.sendMessage(chatJid, { text: "⚠️ Non sono riuscito a usare il link d'invito in automatico." });
+                }
+                return true;
+            }
+
             // --- SEZIONE 3: IMPOSTAZIONI E SICUREZZA DEL GRUPPO ---
             case '!editgroup': {
                 if (!isGroup) return true;
@@ -670,9 +692,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             groupName = metadata.subject || chatJid;
                         } catch (e) {}
                     }
-                    const forwardText = `✉️ Nuova richiesta di supporto ricevuta\nDa utente: @${sender.split('@')[0]}\nProvenienza: ${groupName}\nTesto: ${userMessage}`;
+                    const forwardText = `✉ Nuova richiesta di supporto ricevuta\nDa utente: @${sender.split('@')[0]}\nProvenienza: ${groupName}\nTesto: ${userMessage}`;
                     await sock.sendMessage(OWNER_JID, { text: forwardText, mentions: [sender] });
-                    await sock.sendMessage(chatJid, { text: "✉️ Il tuo messaggio è stato inoltrato con successo ad Alessio" });
+                    await sock.sendMessage(chatJid, { text: "✉ Il tuo messaggio è stato inoltrato con successo ad Alessio" });
                 }
                 return true;
             }
@@ -810,7 +832,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         }
                     } else if (action === 'off') {
                         global.protectionEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⚠️ Attenzione protezione del proprietario disattivata" });
+                        await sock.sendMessage(chatJid, { text: "⚠️️ Attenzione protezione del proprietario disattivata" });
                     }
                 }
                 return true;
@@ -869,7 +891,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
                 const broadText = messageText.replace(/^!broadcast/i, '').trim();
                 if (!broadText) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Inserisci il testo da inviare in broadcast" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il testo da inviare in broadcast" });
                     return true;
                 }
                 await sock.sendMessage(chatJid, { text: `📡 Broadcast avviato con successo per tutti i gruppi.` });
@@ -909,6 +931,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isGroup) {
                     groupSettings.lockedGroups.delete(chatJid);
                     await sock.sendMessage(chatJid, { text: "🔓 Chat del gruppo sbloccata per tutti i partecipanti." });
+                    return true;
                 }
                 return true;
             }
