@@ -1,8 +1,28 @@
 import express from 'express';
 import fs from 'fs';
+import path from 'path';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { execute as adminExecute } from './commands/admin.js';
+
+// --- GESTIONE LETTURA CONFIG.JSON ---
+const configPath = path.resolve('config.json');
+
+function loadConfig() {
+    try {
+        if (fs.existsSync(configPath)) {
+            const rawData = fs.readFileSync(configPath, 'utf8');
+            return JSON.parse(rawData);
+        }
+    } catch (e) {
+        console.error("Errore nella lettura del file config.json:", e);
+    }
+    return {};
+}
+
+// Carichiamo la configurazione all'avvio e la rendiamo globale
+const savedConfig = loadConfig();
+global.geminiApiKey = savedConfig.geminiApiKey || "";
 
 // 1. Configurazione Server Express per UptimeRobot (24/7)
 const app = express();
