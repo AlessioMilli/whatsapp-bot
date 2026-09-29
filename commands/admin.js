@@ -649,7 +649,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     
                     const response = await ai.models.generateContent({
-                        model: 'gemini-1.5-flash',
+                        model: 'gemini-3.8-flash',
                         contents: `Rispondi in italiano in modo fluido, chiaro e dettagliato alla seguente richiesta di ricerca: ${query}`
                     });
 
@@ -858,7 +858,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         global.protectedUsers.add(targetMention);
                         await sock.sendMessage(chatJid, { text: "👑 Nuovo proprietario aggiunto con successo" });
                     } else {
-                        await sock.sendMessage(chatJid, { text: "⚠️️ Devi taggare un utente per promuoverlo" });
+                        await sock.sendMessage(chatJid, { text: "⚠ Devi taggare un utente per promuoverlo" });
                     }
                 } else {
                     await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al creatore principale" });
