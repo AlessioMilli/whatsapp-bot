@@ -86,7 +86,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
         global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
         global.botOwner = global.botOwner || OWNER_JID;
-        global.geminiApiKey = global.geminiApiKey || "AQ.Ab8RN6JnprdR1gS1FeEUKu06jzFPLHLQJecn5fOFfrVeMvgPUw";
+        global.geminiApiKey = global.geminiApiKey || "";
 
         // Emergenza attiva: blocca tutto tranne i comandi di sblocco dell'owner
         if (groupSettings.emergencyStopped && !isOwner(sender, sock)) {
@@ -547,7 +547,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Controllo automatico: il bot controlla se IL TUO NUMERO PRINCIPALE è amministratore del gruppo!
                 const ownerAdmin = await isOwnerAdmin(sock, chatJid);
                 if (!ownerAdmin && !isOwner(sender, sock)) {
                     await sock.sendMessage(chatJid, { text: "❌ Controllo fallito: il tuo numero principale non risulta amministratore di questo gruppo." });
@@ -643,32 +642,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
                 if (!global.geminiApiKey) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Manca la chiave API di Gemini il proprietario deve impostarla prima" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Manca la chiave API di Gemini. Impostala con !setgeminiak [tua_chiave]" });
                     return true;
                 }
                 try {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
-                    let responseText = "";
                     
-                    try {
-                        const response = await ai.models.generateContent({
-                            model: 'gemini-2.5-flash',
-                            contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
-                        });
-                        responseText = response.text;
-                    } catch (primaryErr) {
-                        try {
-                            const fallbackResponse = await ai.models.generateContent({
-                                model: 'gemini-1.5-flash',
-                                contents: `Rispondi in italiano in modo fluido alla seguente richiesta di ricerca web: ${query}`
-                            });
-                            responseText = fallbackResponse.text;
-                        } catch (secErr) {
-                            throw secErr;
-                        }
-                    }
+                    const response = await ai.models.generateContent({
+                        model: 'gemini-1.5-flash',
+                        contents: `Rispondi in italiano in modo fluido, chiaro e dettagliato alla seguente richiesta di ricerca: ${query}`
+                    });
 
-                    const finalResponse = responseText || "Nessuna risposta generata.";
+                    const finalResponse = response.text || "Nessuna risposta generata.";
                     await sock.sendMessage(chatJid, { text: finalResponse });
                 } catch (err) {
                     console.error("Errore Gemini API:", err);
@@ -873,7 +858,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         global.protectedUsers.add(targetMention);
                         await sock.sendMessage(chatJid, { text: "👑 Nuovo proprietario aggiunto con successo" });
                     } else {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Devi taggare un utente per promuoverlo" });
+                        await sock.sendMessage(chatJid, { text: "⚠️️ Devi taggare un utente per promuoverlo" });
                     }
                 } else {
                     await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al creatore principale" });
