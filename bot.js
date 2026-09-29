@@ -1,6 +1,5 @@
 import express from 'express';
 import fs from 'fs';
-import readline from 'readline';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode';
@@ -8,7 +7,7 @@ import { execute as adminExecute } from './commands/admin.js';
 
 // 1. Configurazione Server Express per UptimeRobot (24/7) e rotta QR Code web
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 let qrCodeDataURL = '';
 
@@ -36,19 +35,8 @@ app.listen(PORT, () => {
     console.log(`Server Express in ascolto sulla porta ${PORT}`);
 });
 
-const mutedUsers = new Set();
-const warnings = new Map();
-
-// Mappa per tracciare il cooldown antispam degli utenti
 const userCooldowns = new Map();
-const COOLDOWN_TIME = 5000; // Tempo di attesa in millisecondi (5 secondi)
-
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-const askQuestion = (query) => new Promise((resolve) => rl.question(query, resolve));
+const COOLDOWN_TIME = 5000;
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -58,33 +46,12 @@ async function startBot() {
         printQRInTerminal: false
     });
 
-    // Gestione del pairing code (codice di accoppiamento da terminale) se non è già registrato
-    if (!sock.authState.creds.registered) {
-        const usePairingCode = await askQuestion('Vuoi connetterti tramite Codice di Accoppiamento (pairing code) da terminale? (s/n): ');
-        if (usePairingCode.toLowerCase() === 's' || usePairingCode.toLowerCase() === 'si') {
-            const phoneNumber = await askQuestion('Inserisci il tuo numero di telefono con prefisso internazionale (es. 393534467571): ');
-            try {
-                let cleanedNumber = phoneNumber.replace(/[^0-9]/g, '');
-                setTimeout(async () => {
-                    const code = await sock.requestPairingCode(cleanedNumber);
-                    console.log(`\n========================================`);
-                    console.log(`🔑 IL TUO CODICE DI ACCOPPIAMENTO È: ${code}`);
-                    console.log(`========================================\n`);
-                    console.log(`Inseriscilo su WhatsApp andando su: Dispositivi collegati -> Collega un dispositivo -> Collega con il numero di telefono.\n`);
-                }, 3000);
-            } catch (err) {
-                console.error('Errore durante la richiesta del codice di accoppiamento:', err);
-            }
-        }
-    }
-
     sock.ev.on('creds.update', saveCreds);
 
     // Gestione della connessione e generazione del QR code grafico
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Se riceve una stringa QR, la converte in un'immagine Data URL per il browser
         if (qr) {
             try {
                 qrCodeDataURL = await qrcode.toDataURL(qr);
@@ -103,13 +70,12 @@ async function startBot() {
                 startBot();
             }
         } else if (connection === 'open') {
-            qrCodeDataURL = ''; // Reset del QR code una volta connessi
+            qrCodeDataURL = '';
             console.log('✅ Bot connesso e operativo con successo!');
-            rl.close();
         }
     });
 
-    // Ascolto degli eventi sui partecipanti (benvenuto automatico gestito direttamente in admin.js)
+    // Ascolto degli eventi sui partecipanti (benvenuto automatico)
     sock.ev.on('group-participants.update', async (event) => {
         try {
             if (event.action === 'add') {
@@ -137,7 +103,6 @@ async function startBot() {
             const chatJid = m.key.remoteJid;
             if (!chatJid) return;
 
-            // Se il messaggio NON è inviato da te, blocca canali, newsletter e bacheche
             if (!m.key.fromMe) {
                 if (chatJid.endsWith('@newsletter') || chatJid.includes('@broadcast') || chatJid.includes('@lid')) {
                     return;
@@ -147,7 +112,6 @@ async function startBot() {
             const isGroup = chatJid.endsWith('@g.us');
             const ownerJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : "393534467571@s.whatsapp.net";
 
-            // Assegnazione sicura del mittente
             let sender = m.key.fromMe ? ownerJid : (isGroup ? m.key.participant : chatJid);
             if (!sender) sender = ownerJid;
 
