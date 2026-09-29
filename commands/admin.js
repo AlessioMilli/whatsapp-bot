@@ -649,7 +649,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
                     
                     const response = await ai.models.generateContent({
-                        model: 'gemini-3.8-flash',
+                        model: 'gemini-2.5-flash',
                         contents: `Rispondi in italiano in modo fluido, chiaro e dettagliato alla seguente richiesta di ricerca: ${query}`
                     });
 
