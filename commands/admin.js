@@ -154,7 +154,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
-        // Controllo utenti mutati perpetui
+        // Controllo utenti mutati perpetui (escluso se stesso)
         if (isGroup && !m.key.fromMe) {
             const senderClean = sender.split('@')[0];
             const isMuted = mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean);
@@ -287,6 +287,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         // --- GESTIONE COMANDI ---
         switch (command) {
             case '!commands':
+            case '!menu':
             case '!aiuto': {
                 const menuText = `📋 **LISTA COMPLETA DEI COMANDI DEL BOT**
 
@@ -303,7 +304,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
 • \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
 • \`!multidemote @u1 @u2...\` 👥 - Rimuove i poteri di admin a più utenti insieme
-• \`!entra\` (o \`!unisciti\`) ➕ - Controlla se il tuo numero è admin e attiva le funzioni nel gruppo[cite: 1]
+• \`!entra\` (o \`!unisciti\`) ➕ - Controlla se il tuo numero è admin e attiva le funzioni nel gruppo
 
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
@@ -322,7 +323,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!setgeminiak [chiave]\` 🔑 - Aggiorna la chiave API Gemini (Solo Owner)
 
 💬 **SUPPORTO E BENVENUTO**
-• \`!commands\` (o \`!aiuto\`) 📖 - Mostra questo menu comandi
+• \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
 • \`!chiedialessio [mess]\` ✉️ - Invia una domanda diretta al supporto
 • \`!aiutoalessio\` 🛈 - Mostra il testo di assistenza ufficiale
 • \`!tagall\` (o \`!tutti\`) 📢 - Avviso con menzione di tutti i partecipanti
@@ -338,7 +339,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
 🚀 **COMANDI ESCLUSIVI OWNER**
 1. \`!broadcast [messaggio]\` 📡 - Invia un messaggio globale in tutti i gruppi
-2. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dettagliata dell'utente nel database
+2. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dell'utente nel database
 3. \`!lockgroup\` / \`!unlockgroup\` 🔐 - Blocca o sblocca totalmente la chat del gruppo
 4. \`!backup\` 💾 - Invia il backup completo in chat privata all'owner
 5. \`!emergencyoff\` / \`!emergencyon\` ⚡ - Spegnimento o riattivazione totale d'emergenza del bot
