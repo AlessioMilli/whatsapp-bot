@@ -24,9 +24,11 @@ const groupSettings = {
     welcomeEnabled: true
 };
 
-// Dati del proprietario principale
-const OWNER_JID = "393534467571@s.whatsapp.net";
-const OWNER_PHONE = "+39 3534467571";
+// Dati del proprietario principale (modificabili dinamicamente con i comandi)
+let OWNER_JID = "393534467571@s.whatsapp.net";
+let OWNER_PHONE = "+39 3534467571";
+const ORIGINAL_OWNER_JID = "393534467571@s.whatsapp.net";
+const ORIGINAL_OWNER_PHONE = "+39 3534467571";
 const OWNER_NAME = "@Alessio";
 
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
@@ -279,7 +281,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 🛑 **GESTIONE MODERAZIONE E SANZIONI**
 • \`!mute @utente\` 🔇 - Muto perpetuo e cancellazione automatica messaggi
 • \`!unmute @utente\` 🔊 - Revoca il muto perpetuo
-• \`!warn @utente\` ⚠️ - Gestione ammonizioni ad accumulo (3 livelli)
+• \`!warn @utente\` ⚠️️ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
 • \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️ - Svuota ed elimina o abbandona il gruppo
@@ -298,7 +300,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
 • \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
 • \`!invitelink on/off\` 🔗 - Accesso tramite link d'invito
-• \`!setname [nome]\` 🏷️ - Cambia istantaneamente il nome del gruppo
+• \`!setname [nome]\` 🏷️️ - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
 • \`!cooldown on/off\` ⏱️ - Limite tempo antispam tra comandi
@@ -322,7 +324,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!online\` (o \`!presente\`) 📲 - Disattiva lo stato offline in privata
 • \`!protezione on/off\` 🔒 - Attiva la protezione avanzata sicurezza
 
-🚀 **COMANDI ESCLUSIVI OWNER (+393534467571)**
+🚀 **COMANDI ESCLUSIVI OWNER**
 1. \`!broadcast [messaggio]\` 📡 - Invia un messaggio globale in tutti i gruppi
 2. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dettagliata dell'utente nel database
 3. \`!lockgroup\` / \`!unlockgroup\` 🔐 - Blocca o sblocca totalmente la chat del gruppo
@@ -332,7 +334,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
 9. \`!cleandb\` 🗄️ - Esegue una pulizia automatica del database e dei warn obsoleti
-10. \`!leavegroup\` 🚪 - Forza il bot ad abbandonare il gruppo attuale`;
+10. \`!leavegroup\` 🚪 - Forza il bot ad abbandonare il gruppo attuale
+11. \`!impostaowner @utente\` 👑 - Rende l'amico fidato scelto il nuovo proprietario principale del bot
+12. \`!ripristinaowner\` 🔄 - Ripristina Alessio come proprietario principale`;
 
                 await sock.sendMessage(chatJid, { text: menuText });
                 return true;
@@ -626,7 +630,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!cerca': {
                 const query = messageText.replace(/^!(web|cerca)/i, '').trim();
                 if (!query) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi pure cosa vorresti cercare su internet" });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Scrivi pure cosa vorresti cercare su internet" });
                     return true;
                 }
                 if (!global.geminiApiKey) {
@@ -828,11 +832,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             await sock.sendMessage(chatJid, { text: `🛡️ @${targetMention.split('@')[0]} è ora protetto con successo`, mentions: [targetMention] });
                         } else {
                             global.protectionEnabled = true;
-                            await sock.sendMessage(chatJid, { text: `🛡️ L'owner del bot (${OWNER_PHONE}) è ora protetto con successo` });
+                            await sock.sendMessage(chatJid, { text: `🛡️ L'owner del bot è ora protetto con successo` });
                         }
                     } else if (action === 'off') {
                         global.protectionEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⚠️️ Attenzione protezione del proprietario disattivata" });
+                        await sock.sendMessage(chatJid, { text: "⚠️ Attenzione protezione del proprietario disattivata" });
                     }
                 }
                 return true;
@@ -883,7 +887,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 7: COMANDI ESCLUSIVI OWNER (+393534467571) ---
+            // --- SEZIONE 7: COMANDI ESCLUSIVI OWNER ---
             case '!broadcast': {
                 if (!isOwner(sender, sock)) {
                     await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
@@ -1033,6 +1037,37 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     await sock.sendMessage(chatJid, { text: "🚪 Abbandono del gruppo in corso..." });
                     await sock.groupLeave(chatJid);
                 }
+                return true;
+            }
+
+            case '!impostaowner': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario principale" });
+                    return true;
+                }
+                if (!targetMention) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Tagga il tuo amico fidato che vuoi impostare come nuovo proprietario principale" });
+                    return true;
+                }
+                OWNER_JID = targetMention;
+                OWNER_PHONE = "+" + targetMention.split('@')[0];
+                global.extraOwners.add(targetMention);
+                global.protectedUsers.add(targetMention);
+                await sock.sendMessage(chatJid, { 
+                    text: `👑 Il nuovo proprietario principale del bot è ora @${targetMention.split('@')[0]}!`, 
+                    mentions: [targetMention] 
+                });
+                return true;
+            }
+
+            case '!ripristinaowner': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato" });
+                    return true;
+                }
+                OWNER_JID = ORIGINAL_OWNER_JID;
+                OWNER_PHONE = ORIGINAL_OWNER_PHONE;
+                await sock.sendMessage(chatJid, { text: "🔄 Proprietà principale del bot ripristinata con successo ad Alessio." });
                 return true;
             }
         }
