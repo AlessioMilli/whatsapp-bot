@@ -56,6 +56,18 @@ async function ensureBotIsAdmin(sock, chatJid) {
     }
 }
 
+// Funzione per controllare se il TUO numero (OWNER_JID) è amministratore del gruppo
+async function isOwnerAdmin(sock, chatJid) {
+    try {
+        const metadata = await sock.groupMetadata(chatJid);
+        const cleanOwnerJid = OWNER_JID.split(':')[0].split('@')[0];
+        const participant = metadata.participants.find(p => p.id.includes(cleanOwnerJid));
+        return participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
+    } catch (e) {
+        return false;
+    }
+}
+
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
     try {
         if (!chatJid) {
@@ -281,7 +293,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 🛑 **GESTIONE MODERAZIONE E SANZIONI**
 • \`!mute @utente\` 🔇 - Muto perpetuo e cancellazione automatica messaggi
 • \`!unmute @utente\` 🔊 - Revoca il muto perpetuo
-• \`!warn @utente\` ⚠️️ - Gestione ammonizioni ad accumulo (3 livelli)
+• \`!warn @utente\` ⚠️ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
 • \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️ - Svuota ed elimina o abbandona il gruppo
@@ -291,7 +303,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
 • \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
 • \`!multidemote @u1 @u2...\` 👥 - Rimuove i poteri di admin a più utenti insieme
-• \`!entra\` (o \`!unisciti\`) ➕ - Fa entrare automaticamente il bot nel gruppo tramite link d'invito[cite: 1]
+• \`!entra\` (o \`!unisciti\`) ➕ - Controlla se il tuo numero è admin e attiva le funzioni nel gruppo[cite: 1]
 
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
@@ -300,7 +312,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
 • \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
 • \`!invitelink on/off\` 🔗 - Accesso tramite link d'invito
-• \`!setname [nome]\` 🏷️️ - Cambia istantaneamente il nome del gruppo
+• \`!setname [nome]\` 🏷️ - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
 • \`!cooldown on/off\` ⏱️ - Limite tempo antispam tra comandi
@@ -530,22 +542,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!entra':
             case '!unisciti': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
                 if (!isGroup) {
                     await sock.sendMessage(chatJid, { text: "⚠️ Questo comando va usato dentro a un gruppo" });
                     return true;
                 }
-                try {
-                    const code = await sock.groupInviteCode(chatJid);
-                    await sock.groupAcceptInvite(code);
-                    await sock.sendMessage(chatJid, { text: "✅ Ho effettuato la richiesta di accesso al gruppo!" });
-                } catch (err) {
-                    console.error("Errore nell'unirsi al gruppo:", err);
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non sono riuscito a usare il link d'invito in automatico." });
+
+                // Controllo automatico: il bot controlla se IL TUO NUMERO PRINCIPALE è amministratore del gruppo!
+                const ownerAdmin = await isOwnerAdmin(sock, chatJid);
+                if (!ownerAdmin && !isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "❌ Controllo fallito: il tuo numero principale non risulta amministratore di questo gruppo." });
+                    return true;
                 }
+
+                await sock.sendMessage(chatJid, { text: "✅ Controllo superato con successo: il tuo numero è amministratore del gruppo! Il bot è pronto a gestire tutto." });
                 return true;
             }
 
@@ -630,7 +639,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!cerca': {
                 const query = messageText.replace(/^!(web|cerca)/i, '').trim();
                 if (!query) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Scrivi pure cosa vorresti cercare su internet" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi pure cosa vorresti cercare su internet" });
                     return true;
                 }
                 if (!global.geminiApiKey) {
