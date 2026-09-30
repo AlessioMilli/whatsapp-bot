@@ -42,13 +42,21 @@ const isProtected = (jid) => {
     return jid === OWNER_JID || global.protectedUsers.has(jid);
 };
 
-// 🛡️ Funzione di controllo preventivo: verifica se il TUO account (+393534467571) è Admin nel gruppo
+// 🛡️ Funzione di controllo preventivo: verifica se l'account o l'owner sono Admin nel gruppo
 async function checkGroupAdminPrivileges(sock, chatJid) {
     try {
         const metadata = await sock.groupMetadata(chatJid);
-        const cleanOwnerJid = OWNER_JID.split(':')[0].split('@')[0];
-        const ownerParticipant = metadata.participants.find(p => p.id.includes(cleanOwnerJid));
-        const isAdmin = ownerParticipant && (ownerParticipant.admin === 'admin' || ownerParticipant.admin === 'superadmin');
+        const senderJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : null;
+        
+        const participant = metadata.participants.find(p => {
+            const pIdClean = p.id.split(':')[0].split('@')[0];
+            const ownerClean = OWNER_JID.split(':')[0].split('@')[0];
+            const senderClean = senderJid ? senderJid.split(':')[0].split('@')[0] : '';
+            
+            return pIdClean === ownerClean || pIdClean === senderClean;
+        });
+
+        const isAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
         return isAdmin;
     } catch (e) {
         return false;
@@ -336,7 +344,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!online\` (o \`!presente\`) 📲 - Disattiva lo stato offline in privata
 • \`!protezione on/off\` 🔒 - Attiva la protezione avanzata sicurezza`;
 
-                // Controllo visibilità blocco esclusivo owner
                 if (isOwner(sender, sock)) {
                     menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**
 1. \`!broadcast [messaggio]\` 📡 - Invia un messaggio globale in tutti i gruppi
@@ -354,7 +361,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 1: GESTIONE MODERAZIONE E SANZIONI ---
             case '!mute': {
                 if (isGroup) {
                     const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
@@ -508,7 +514,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 2: GESTIONE AMMINISTRATORI E PERMESSI GRUPPO ---
             case '!promuovi': {
                 if (!isGroup || !targetMention) return true;
                 const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
@@ -558,7 +563,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 3: IMPOSTAZIONI E SICUREZZA DEL GRUPPO ---
             case '!checkadmin': {
                 if (!isGroup) {
                     await sock.sendMessage(chatJid, { text: "⚠️ Questo comando va eseguito all'interno di un gruppo." });
@@ -648,7 +652,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 4: INTELLIGENZA ARTIFICIALE E WEB ---
             case '!web':
             case '!cerca': {
                 const query = messageText.replace(/^!(web|cerca)/i, '').trim();
@@ -688,7 +691,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 5: SUPPORTO, LISTA COMANDI E BENVENUTO ---
             case '!chiedialessio': {
                 const userMessage = messageText.replace(/^!chiedialessio/i, '').trim();
                 if (!userMessage) {
@@ -748,7 +750,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 6: PROPRIETARIO DEL BOT E COMFORT PRIVATO ---
             case '!setname': {
                 if (isGroup) {
                     const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
@@ -898,7 +899,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            // --- SEZIONE 7: COMANDI ESCLUSIVI OWNER ---
             case '!broadcast': {
                 if (!isOwner(sender, sock)) {
                     await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
@@ -1035,7 +1035,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
                 warnings.clear();
-                await sock.sendMessage(chatJid, { text: "🗄️ Pulizia automatica del database completata con successo." });
+                await sock.sendMessage(chatJid, { text: "🗄️️ Pulizia automatica del database completata con successo." });
                 return true;
             }
         }
