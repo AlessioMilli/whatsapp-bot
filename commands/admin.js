@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import { DisconnectReason } from '@whiskeysockets/baileys';
 
 // Strutture dati in memoria per tracciare lo stato
@@ -94,7 +93,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
         global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
         global.botOwner = global.botOwner || OWNER_JID;
-        global.geminiApiKey = global.geminiApiKey || "AQ.Ab8RN6JnprdR1gS1FeEUKu06jzFPLHLQJecn5fOFfrVeMvgPUw";
 
         // Emergenza attiva: blocca tutto tranne i comandi di sblocco dell'owner
         if (groupSettings.emergencyStopped && !isOwner(sender, sock)) {
@@ -325,14 +323,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
 • \`!cooldown on/off\` ⏱️ - Limite tempo antispam tra comandi
 
-🤖 **INTELLIGENZA ARTIFICIALE E WEB**
-• \`!web [testo]\` (o \`!cerca\`) 💡 - Ricerca web intelligente con Google Gemini AI
-• \`!setgeminiak [chiave]\` 🔑 - Aggiorna la chiave API Gemini (Solo Owner)
-
 💬 **SUPPORTO E BENVENUTO**
 • \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
 • \`!chiedialessio [mess]\` ✉️ - Invia una domanda diretta al supporto
-• \`!aiutoalessio\` 🛈 - Mostra il testo di assistenza ufficiale
 • \`!tagall\` (o \`!tutti\`) 📢 - Avviso con menzione di tutti i partecipanti
 • \`!poll [domanda] [opz 1] [opz 2]\` 📊 - Crea un sondaggio interattivo
 • \`!welcome on/off\` 👋 - Gestisce il benvenuto automatico
@@ -354,7 +347,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄️ - Esegue una pulizia automatica del database e dei warn obsoleti`;
+9. \`!cleandb\` 🗄️️ - Esegue una pulizia automatica del database e dei warn obsoleti`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -565,7 +558,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!checkadmin': {
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando va eseguito all'interno di un gruppo." });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Questo comando va eseguito all'interno di un gruppo." });
                     return true;
                 }
                 const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
@@ -652,45 +645,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!web':
-            case '!cerca': {
-                const query = messageText.replace(/^!(web|cerca)/i, '').trim();
-                if (!query) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi pure cosa vorresti cercare su internet" });
-                    return true;
-                }
-                try {
-                    const ai = new GoogleGenAI({ apiKey: global.geminiApiKey });
-                    
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: `Rispondi in italiano in modo fluido, chiaro e dettagliato alla seguente richiesta di ricerca: ${query}`
-                    });
-
-                    const finalResponse = response.text || "Nessuna risposta generata.";
-                    await sock.sendMessage(chatJid, { text: finalResponse });
-                } catch (err) {
-                    console.error("Errore Gemini API:", err);
-                    await sock.sendMessage(chatJid, { text: "⚠️ Si è verificato un piccolo problema di connessione con intelligenza artificiale riprova più tardi" });
-                }
-                return true;
-            }
-
-            case '!setgeminiak': {
-                if (isOwner(sender, sock)) {
-                    const key = messageText.slice(13).trim();
-                    if (key) {
-                        global.geminiApiKey = key;
-                        await sock.sendMessage(chatJid, { text: "🔑 Chiave API di Google Gemini aggiornata correttamente" });
-                    } else {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Inserisci una chiave valida dopo il comando" });
-                    }
-                } else {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                }
-                return true;
-            }
-
             case '!chiedialessio': {
                 const userMessage = messageText.replace(/^!chiedialessio/i, '').trim();
                 if (!userMessage) {
@@ -710,11 +664,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!aiutoalessio': {
-                await sock.sendMessage(chatJid, { text: "Centro assistenza ufficiale di Alessio. Se hai bisogno di aiuto o vuoi fare una domanda, scrivi pure il comando seguito dalla tua richiesta. Ad esempio usa !chiedialessio e scrivi il tuo messaggio, verrai ricontattato al più presto." });
-                return true;
-            }
-
             case '!tagall':
             case '!tutti': {
                 if (isGroup) {
@@ -731,7 +680,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (pollQuestion && pollOptions.length > 1) {
                     await sock.sendMessage(chatJid, { poll: { name: pollQuestion, values: pollOptions } });
                 } else {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Formato del sondaggio errato" });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Formato del sondaggio errato" });
                 }
                 return true;
             }
@@ -1035,7 +984,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
                 warnings.clear();
-                await sock.sendMessage(chatJid, { text: "🗄️️ Pulizia automatica del database completata con successo." });
+                await sock.sendMessage(chatJid, { text: "🗄 Pulizia automatica del database completata con successo." });
                 return true;
             }
         }
