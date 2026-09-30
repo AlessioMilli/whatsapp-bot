@@ -211,7 +211,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             if (newTitle && isGroup) {
                 if (await checkGroupAdminPrivileges(sock, chatJid)) {
                     await sock.groupUpdateSubject(chatJid, newTitle);
-                    await sock.sendMessage(chatJid, { text: `🏷️ Il nome del gruppo è stato aggiornato in modo perfetto` });
+                    await sock.sendMessage(chatJid, { text: `🏷️️ Il nome del gruppo è stato aggiornato in modo perfetto` });
                 }
             }
             return true;
@@ -291,7 +291,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
 9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
-10. \`!associa [nome_breve] | [nome_whatsapp]\` 🔗 - Associa nomi personalizzati ai JID dei gruppi (supporta più associazioni separate da punto e virgola `;` o a capo)`;
+10. \`!associa [nome_gruppo]\` 🔗 - Associa direttamente i gruppi tramite i loro nomi reali (supporta più nomi separati da punto e virgola \`;\` o andando a capo)`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -540,7 +540,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                             let replyMsg = `✅ Il comando è stato applicato con successo per ${successCount} gruppo/i specificato/i (Benvenuto impostato su: ${action.toUpperCase()}).`;
                             if (notFoundGroups.length > 0) {
-                                replyMsg += `\n⚠️️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}.`;
+                                replyMsg += `\n⚠️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}.`;
                             }
                             await sock.sendMessage(chatJid, { text: replyMsg });
                         } else {
@@ -782,46 +782,43 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (!isGroup && isOwner(sender, sock)) {
                     const rawInput = messageText.replace(/^!associa/i, '').trim();
                     if (!rawInput) {
-                        await sock.sendMessage(sender, { text: `⚠️ Sintassi non corretta.\nUsa il formato:\n!associa [nome_breve] | [nome_whatsapp]\n(Puoi inserire più associazioni separandole con il punto e virgola ';' o andando a capo)` });
+                        await sock.sendMessage(sender, { text: `⚠️ Inserisci i nomi dei gruppi da associare (separati da ';' o andando a capo).` });
                         return true;
                     }
 
-                    // Suddivide le singole righe o i gruppi separati da punto e virgola ';'
-                    const entries = rawInput.split(/[\n;]+/).map(e => e.trim()).filter(Boolean);
+                    // Divide la lista usando il punto e virgola ';' o andando a capo
+                    const groupNamesInput = rawInput.split(/[\n;]+/).map(n => n.trim().toLowerCase()).filter(Boolean);
                     let successCount = 0;
                     let reportLines = [];
 
                     const chats = Object.values(sock.chats || {});
 
-                    for (const entry of entries) {
-                        const parts = entry.split('|').map(p => p.trim());
-                        if (parts.length === 2) {
-                            const nomePersonalizzato = parts[0].toLowerCase();
-                            const nomeWhatsapp = parts[1].toLowerCase();
-                            
-                            let targetJid = null;
-                            for (const chat of chats) {
-                                if (chat.id && chat.id.endsWith('@g.us') && chat.subject) {
-                                    if (chat.subject.toLowerCase().includes(nomeWhatsapp)) {
-                                        targetJid = chat.id;
-                                        break;
-                                    }
+                    for (const nameInput of groupNamesInput) {
+                        let targetJid = null;
+                        let matchedSubject = "";
+
+                        for (const chat of chats) {
+                            if (chat.id && chat.id.endsWith('@g.us') && chat.subject) {
+                                if (chat.subject.toLowerCase().includes(nameInput)) {
+                                    targetJid = chat.id;
+                                    matchedSubject = chat.subject;
+                                    break;
                                 }
                             }
-                            
-                            if (targetJid) {
-                                groupNameToJid.set(nomePersonalizzato, targetJid);
-                                successCount++;
-                                reportLines.push(`✅ "${nomePersonalizzato}" ➔ ${parts[1]}`);
-                            } else {
-                                reportLines.push(`⚠️ Gruppo non trovato: "${parts[1]}"`);
-                            }
+                        }
+
+                        if (targetJid) {
+                            // Salva l'associazione usando direttamente il nome inserito (e anche il nome reale del gruppo)
+                            groupNameToJid.set(nameInput, targetJid);
+                            groupNameToJid.set(matchedSubject.toLowerCase().trim(), targetJid);
+                            successCount++;
+                            reportLines.push(`✅ Assoggettato: "${matchedSubject}"`);
                         } else {
-                            reportLines.push(`❌ Riga non valida: "${entry}"`);
+                            reportLines.push(`⚠️️ Non trovato: "${nameInput}"`);
                         }
                     }
 
-                    let finalMsg = `📊 **Report Associazioni (${successCount}/${entries.length} riuscite):**\n\n` + reportLines.join('\n');
+                    let finalMsg = `📊 **Report Associazioni (${successCount}/${groupNamesInput.length} riuscite):**\n\n` + reportLines.join('\n');
                     await sock.sendMessage(sender, { text: finalMsg });
                 }
                 return true;
