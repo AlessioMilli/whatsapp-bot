@@ -1,47 +1,47 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 
-// Strutture dati in memoria per tracciare lo stato
+// Strutture dati globali di base
+const blacklist = new Set();
+const warnings = new Map(); // key: userId + chatJid, value: count
 const mutedUsers = new Set();
-const warnings = new Map(); // key: userId, value: count
-const cooldowns = new Map(); // key: userId, value: timestamp
-const blacklist = new Set(); // key: userId
+const cooldowns = new Map();
 
-// Mappe per tracciare se l'utente è già stato avvisato del cambio stato (online/offline)
-const notifiedOnline = new Set();
+// Gestione delle configurazioni specifiche per ogni singolo gruppo (chatJid -> impostazioni)
+const groupsConfig = new Map();
 
-// Configurazioni di stato del gruppo e globali
-const groupSettings = {
-    linkFilter: false,
-    cooldownEnabled: false,
-    cooldownTime: 4000,
-    waitingForTagAll: new Set(),
-    waitingForSetName: new Set(),
-    inactiveGroups: new Set(),
-    lockedGroups: new Set(),
-    stealthMode: false,
-    emergencyStopped: false,
-    welcomeEnabled: true
-};
+function getGroupConfig(chatJid) {
+    if (!groupsConfig.has(chatJid)) {
+        groupsConfig.set(chatJid, {
+            linkFilter: false,
+            cooldownEnabled: false,
+            cooldownTime: 4000,
+            waitingForTagAll: new Set(),
+            waitingForSetName: new Set(),
+            isInactive: false,
+            isLocked: false,
+            stealthMode: false,
+            welcomeEnabled: true,
+            protectionEnabled: true,
+            offlineMode: false,
+            protectedUsers: new Set()
+        });
+    }
+    return groupsConfig.get(chatJid);
+}
 
-// Dati del proprietario principale (modificabili dinamicamente con i comandi)
+// Dati del proprietario principale
 let OWNER_JID = "393534467571@s.whatsapp.net";
-let OWNER_PHONE = "+39 3534467571";
-const ORIGINAL_OWNER_JID = "393534467571@s.whatsapp.net";
-const ORIGINAL_OWNER_PHONE = "+39 3534467571";
-
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
-global.protectedUsers = global.protectedUsers || new Set([OWNER_JID]);
-global.protectionEnabled = global.protectionEnabled !== undefined ? global.protectionEnabled : true;
 
 const isOwner = (jid, sock) => {
     return jid === OWNER_JID || global.extraOwners.has(jid) || jid === sock?.user?.id;
 };
 
-const isProtected = (jid) => {
-    return jid === OWNER_JID || global.protectedUsers.has(jid);
+const isProtected = (jid, config) => {
+    return jid === OWNER_JID || config.protectedUsers.has(jid);
 };
 
-// 🛡️ Funzione di controllo preventivo: verifica se l'account o l'owner sono Admin nel gruppo
+// 🛡️️ Funzione di controllo preventivo permessi admin nel gruppo specifico
 async function checkGroupAdminPrivileges(sock, chatJid) {
     try {
         const metadata = await sock.groupMetadata(chatJid);
@@ -55,21 +55,18 @@ async function checkGroupAdminPrivileges(sock, chatJid) {
             return pIdClean === ownerClean || pIdClean === senderClean;
         });
 
-        const isAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
-        return isAdmin;
+        return participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
     } catch (e) {
         return false;
     }
 }
 
-// Funzione di utilità per verificare se il bot/account è amministratore del gruppo
 async function ensureBotIsAdmin(sock, chatJid) {
     try {
         const metadata = await sock.groupMetadata(chatJid);
         const cleanOwnerJid = OWNER_JID.split(':')[0].split('@')[0];
         const botParticipant = metadata.participants.find(p => p.id.includes(cleanOwnerJid));
-        const isAdmin = botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
-        return isAdmin;
+        return botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
     } catch (e) {
         return false;
     }
@@ -77,32 +74,13 @@ async function ensureBotIsAdmin(sock, chatJid) {
 
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
     try {
-        if (!chatJid) {
-            chatJid = m.key.remoteJid;
-        }
-        if (isGroup === undefined) {
-            isGroup = chatJid.endsWith('@g.us');
-        }
-        if (!sender) {
-            sender = m.key.participant || chatJid;
-        }
+        if (!chatJid) chatJid = m.key.remoteJid;
+        if (isGroup === undefined) isGroup = chatJid.endsWith('@g.us');
+        if (!sender) sender = m.key.participant || chatJid;
 
-        // Configurazioni globali iniziali
-        global.linksEnabled = global.linksEnabled !== undefined ? global.linksEnabled : false;
-        global.cooldownEnabled = global.cooldownEnabled !== undefined ? global.cooldownEnabled : false;
-        global.offlineMode = global.offlineMode !== undefined ? global.offlineMode : false;
-        global.groupActive = global.groupActive !== undefined ? global.groupActive : true;
-        global.botOwner = global.botOwner || OWNER_JID;
+        const config = getGroupConfig(chatJid);
 
-        // Emergenza attiva: blocca tutto tranne i comandi di sblocco dell'owner
-        if (groupSettings.emergencyStopped && !isOwner(sender, sock)) {
-            return false;
-        }
-
-        // Controllo Blacklist globale
-        if (blacklist.has(sender) && !isOwner(sender, sock)) {
-            return true;
-        }
+        if (blacklist.has(sender) && !isOwner(sender, sock)) return true;
 
         const getTargetJid = () => {
             let targetJid = m.message?.extendedTextMessage?.contextInfo?.participant || m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
@@ -128,8 +106,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return mentions;
         };
 
-        // 👋 Gestione Evento Partecipanti (Benvenuto automatico)
-        if (isGroup && m.messageStubType === 27 && groupSettings.welcomeEnabled) {
+        // 👋 Benvenuto automatico specifico per gruppo
+        if (isGroup && m.messageStubType === 27 && config.welcomeEnabled) {
             const newMemberJid = m.messageStubParameters?.[0];
             if (newMemberJid) {
                 try {
@@ -138,17 +116,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const groupName = metadata.subject || "questo gruppo";
                     
                     let welcomeText = `Buongiorno @${newMemberJid.split('@')[0]} e benvenuto/a nel gruppo ${groupName}\n\n`;
-                    if (desc) {
-                        welcomeText += `Leggi con attenzione le regole: ${desc}`;
-                    }
+                    if (desc) welcomeText += `Leggi con attenzione le regole: ${desc}`;
 
-                    await sock.sendMessage(chatJid, {
-                        text: welcomeText,
-                        mentions: [newMemberJid]
-                    });
-                } catch (err) {
-                    console.error("Errore nell'invio del messaggio di benvenuto:", err);
-                }
+                    await sock.sendMessage(chatJid, { text: welcomeText, mentions: [newMemberJid] });
+                } catch (err) {}
             }
             return true;
         }
@@ -160,25 +131,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
-        // Controllo utenti mutati perpetui (escluso se stesso)
+        // Controllo utenti mutati
         if (isGroup && !m.key.fromMe) {
             const senderClean = sender.split('@')[0];
-            const isMuted = mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean);
-            
-            if (isMuted) {
-                try {
-                    await sock.sendMessage(chatJid, { delete: m.key });
-                } catch (err) {
-                    console.error("Impossibile cancellare il messaggio dell'utente mutato:", err);
-                }
+            if (mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean)) {
+                try { await sock.sendMessage(chatJid, { delete: m.key }); } catch (err) {}
                 return true;
             }
         }
 
-        // Controllo blocco totale gruppo (!lockgroup)
-        if (isGroup && groupSettings.lockedGroups.has(chatJid) && !m.key.fromMe) {
-            const botAdmin = await ensureBotIsAdmin(sock, chatJid);
-            if (botAdmin) {
+        // Controllo blocco totale gruppo specifico
+        if (isGroup && config.isLocked && !m.key.fromMe) {
+            if (await ensureBotIsAdmin(sock, chatJid)) {
                 try {
                     const metadata = await sock.groupMetadata(chatJid);
                     const participant = metadata.participants.find(p => p.id === sender);
@@ -197,55 +161,43 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         const command = args[0].toLowerCase();
         const targetMention = getTargetJid();
 
-        // Controllo se il gruppo è disattivato tramite !gruppo off
-        if (isGroup && groupSettings.inactiveGroups.has(chatJid)) {
+        // Controllo se il bot è disattivato solo in questo specifico gruppo
+        if (isGroup && config.isInactive) {
             if (command === '!gruppo' && args[1] === 'on' && isOwner(sender, sock)) {
-                groupSettings.inactiveGroups.delete(chatJid);
+                config.isInactive = false;
                 await sock.sendMessage(chatJid, { text: "🤖 Il bot è di nuovo attivo in questo gruppo" });
                 return true;
             }
             return false;
         }
 
-        // Sistema Antispam / Cooldown
-        if (groupSettings.cooldownEnabled && isGroup && !isOwner(sender, sock)) {
+        // Cooldown specifico per gruppo
+        if (config.cooldownEnabled && isGroup && !isOwner(sender, sock)) {
             const now = Date.now();
-            const lastTime = cooldowns.get(sender) || 0;
-            if (now - lastTime < groupSettings.cooldownTime) {
-                return true;
-            }
-            cooldowns.set(sender, now);
+            const lastTime = cooldowns.get(sender + chatJid) || 0;
+            if (now - lastTime < config.cooldownTime) return true;
+            cooldowns.set(sender + chatJid, now);
         }
 
-        // Gestione stati in attesa (!tutti / !setname)
-        if (groupSettings.waitingForTagAll && groupSettings.waitingForTagAll.has(sender)) {
-            groupSettings.waitingForTagAll.delete(sender);
+        // Stati in attesa specifici
+        if (config.waitingForTagAll && config.waitingForTagAll.has(sender)) {
+            config.waitingForTagAll.delete(sender);
             const announcementText = messageText.trim();
             const metadata = await sock.groupMetadata(chatJid);
             const participants = metadata.participants.map(p => p.id);
             
             let text = `📢 Attenzione a tutti ragazzi\n\n${announcementText}\n\n`;
-            for (let p of participants) {
-                text += `@${p.split('@')[0]} `;
-            }
+            for (let p of participants) text += `@${p.split('@')[0]} `;
 
-            await sock.sendMessage(chatJid, {
-                text: text,
-                mentions: participants
-            });
+            await sock.sendMessage(chatJid, { text: text, mentions: participants });
             return true;
         }
 
-        if (groupSettings.waitingForSetName && groupSettings.waitingForSetName.has(sender)) {
-            groupSettings.waitingForSetName.delete(sender);
+        if (config.waitingForSetName && config.waitingForSetName.has(sender)) {
+            config.waitingForSetName.delete(sender);
             const newTitle = messageText.trim();
-            if (newTitle) {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
+            if (newTitle && isGroup) {
+                if (await checkGroupAdminPrivileges(sock, chatJid)) {
                     await sock.groupUpdateSubject(chatJid, newTitle);
                     await sock.sendMessage(chatJid, { text: `🏷️ Il nome del gruppo è stato aggiornato in modo perfetto` });
                 }
@@ -253,47 +205,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return true;
         }
 
-        // Filtro link esterni (!link on)
-        if (isGroup && groupSettings.linkFilter && !isOwner(sender, sock)) {
+        // Filtro link specifico per gruppo
+        if (isGroup && config.linkFilter && !isOwner(sender, sock)) {
             const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
             if (urlRegex.test(messageText)) {
                 await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
-                await sock.sendMessage(chatJid, { 
-                    text: `⚠️ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` 
-                });
+                await sock.sendMessage(chatJid, { text: `⚠️ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` });
                 return true;
             }
         }
 
-        // Gestione offline in chat privata
-        if (!isGroup && global.offlineMode && !isOwner(sender, sock) && !m.key.fromMe) {
-            await sock.sendMessage(chatJid, { text: "Alessio al momento non è disponibile, ti risponderà appena rientra nella tua chat." }, { quoted: m });
+        // Protezione utente nel gruppo
+        if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
+            await sock.sendMessage(chatJid, { text: `🛡️ Questo utente è protetto in questo gruppo` });
             return true;
         }
 
-        // Gestione online in chat privata (avvisa una sola volta)
-        if (!isGroup && !global.offlineMode && !isOwner(sender, sock) && !m.key.fromMe) {
-            if (!notifiedOnline.has(sender)) {
-                notifiedOnline.add(sender);
-                await sock.sendMessage(chatJid, { text: "Alessio è ritornato operativo, quindi potrà finalmente risponderti." }, { quoted: m });
-            }
-        }
-
-        // --- Protezione Proprietario e Utenti Protetti su comandi di moderazione ---
-        if (targetMention && isProtected(targetMention) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
-            if (global.protectionEnabled) {
-                const protText = isOwner(targetMention, sock) ? "Non puoi bannare l'owner del bot dal gruppo" : "Non puoi bannare questo utente dal gruppo";
-                await sock.sendMessage(chatJid, { text: `🛡️ ${protText}` });
-            } else {
-                await sock.sendMessage(chatJid, { text: "⚠️ Operazione bloccata perché ci sono restrizioni di sicurezza attive" });
-            }
-            return true;
-        }
-
-        // --- GESTIONE COMANDI ---
         switch (command) {
             case '!commands':
-            case '!aiuto': {
+            case '!aiuto':
+            case '!menu': {
                 let menuText = `📋 **LISTA COMPLETA DEI COMANDI DEL BOT**
 
 🛑 **GESTIONE MODERAZIONE E SANZIONI**
@@ -321,7 +252,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!setname [nome]\` 🏷️ - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
-• \`!cooldown on/off\` ⏱️ - Limite tempo antispam tra comandi
+• \`!cooldown on/off\` ⏱️️ - Limite tempo antispam tra comandi
 
 💬 **SUPPORTO E BENVENUTO**
 • \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
@@ -355,77 +286,47 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!mute': {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
-                }
-                if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Ricordati di taggare la persona che vuoi mutare" });
+                if (isGroup && !(await checkGroupAdminPrivileges(sock, chatJid))) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Non hai i privilegi di Amministratore qui." });
                     return true;
                 }
+                if (!targetMention) return true;
                 mutedUsers.add(targetMention);
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `🔇 L'utente è stato mutato con successo adesso non può parlare`, mentions: [targetMention] });
+                if (!config.stealthMode) {
+                    await sock.sendMessage(chatJid, { text: `🔇 L'utente è stato mutato in questo gruppo.`, mentions: [targetMention] });
                 }
                 return true;
             }
 
             case '!unmute': {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
-                }
+                if (isGroup && !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 if (!targetMention) return true;
                 const targetClean = targetMention.split('@')[0];
                 for (let u of mutedUsers) {
-                    if (u === targetMention || u.split('@')[0] === targetClean) {
-                        mutedUsers.delete(u);
-                    }
+                    if (u === targetMention || u.split('@')[0] === targetClean) mutedUsers.delete(u);
                 }
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `🔊 L'utente è stato smutato può tornare a scrivere`, mentions: [targetMention] });
+                if (!config.stealthMode) {
+                    await sock.sendMessage(chatJid, { text: `🔊 L'utente può tornare a scrivere in questo gruppo.`, mentions: [targetMention] });
                 }
                 return true;
             }
 
             case '!warn':
             case '!wuarn': {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
-                }
+                if (isGroup && !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 if (!targetMention) return true;
-                const currentWarns = (warnings.get(targetMention) || 0) + 1;
-                warnings.set(targetMention, currentWarns);
+                const currentWarns = (warnings.get(targetMention + chatJid) || 0) + 1;
+                warnings.set(targetMention + chatJid, currentWarns);
 
-                if (currentWarns === 1) {
-                    if (!groupSettings.stealthMode) {
-                        await sock.sendMessage(chatJid, {
-                            text: `⚠️ L'utente ha ricevuto la 1ª ammonizione (registrata nel sistema).`,
-                            mentions: [targetMention]
-                        });
+                if (currentWarns < 3) {
+                    if (!config.stealthMode) {
+                        await sock.sendMessage(chatJid, { text: `⚠️ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
                     }
-                } else if (currentWarns === 2) {
-                    if (!groupSettings.stealthMode) {
-                        await sock.sendMessage(chatJid, {
-                            text: `⚠️ Attenzione! Questo è il 2° avvertimento: al prossimo superamento dei limiti verrai bannato dal gruppo.`,
-                            mentions: [targetMention]
-                        });
-                    }
-                } else if (currentWarns >= 3) {
-                    warnings.delete(targetMention);
+                } else {
+                    warnings.delete(targetMention + chatJid);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                    if (!groupSettings.stealthMode) {
-                        await sock.sendMessage(chatJid, { text: `🚨 Limite di 3 avvertimenti superato: utente espulso dal gruppo in via definitiva.`, mentions: [targetMention] });
+                    if (!config.stealthMode) {
+                        await sock.sendMessage(chatJid, { text: `🚨 3 avvertimenti superati: utente espulso da questo gruppo.`, mentions: [targetMention] });
                     }
                 }
                 return true;
@@ -434,244 +335,146 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!rimuovi':
             case '!kick': {
                 if (!isGroup || !targetMention) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
-                const targetName = targetMention.split('@')[0];
+                if (!(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `L'utente @${targetName} è stato rimosso dal gruppo con successo.`, mentions: [targetMention] });
+                if (!config.stealthMode) {
+                    await sock.sendMessage(chatJid, { text: `Utente rimosso da questo gruppo con successo.`, mentions: [targetMention] });
                 }
                 return true;
             }
 
             case '!masskick':
             case '!svuotagruppo': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const metadata = await sock.groupMetadata(chatJid);
-                const participants = metadata.participants
-                    .filter(p => !p.admin && !isProtected(p.id))
-                    .map(p => p.id);
-                
+                const participants = metadata.participants.filter(p => !p.admin && !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participants, "remove");
-                    if (!groupSettings.stealthMode) {
-                        await sock.sendMessage(chatJid, { text: "🧹 Ho ripulito tutto il gruppo rimuovendo tutti i membri non admin" });
-                    }
-                } else {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono partecipanti che possono essere rimossi" });
+                    if (!config.stealthMode) await sock.sendMessage(chatJid, { text: "🧹 Membri non admin rimossi da questo gruppo" });
                 }
                 return true;
             }
 
             case '!deletegroup':
             case '!eliminagruppo': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const metadata = await sock.groupMetadata(chatJid);
-                const participants = metadata.participants.filter(p => !isProtected(p.id)).map(p => p.id);
+                const participants = metadata.participants.filter(p => !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participants, "remove").catch(() => {});
-                }
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: "🗑️ Procedo subito allo svuotamento totale e all'abbandono del gruppo" });
                 }
                 await sock.groupLeave(chatJid);
                 return true;
             }
 
             case '!clearalltesto': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
+                if (!isOwner(sender, sock) && !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const keyword = messageText.replace(/^!clearalltesto/i, '').trim();
-                if (!keyword) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Specifica una parola o una corrispondenza da cercare e cancellare" });
-                    return true;
-                }
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `🔍 Avviata la scansione e cancellazione globale per tutti i messaggi corrispondenti a: ${keyword}` });
+                if (!keyword) return true;
+                if (!config.stealthMode) {
+                    await sock.sendMessage(chatJid, { text: `🔍 Scansione avviata in questo gruppo per: ${keyword}` });
                 }
                 return true;
             }
 
             case '!promuovi': {
-                if (!isGroup || !targetMention) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
-                const targetName = targetMention.split('@')[0];
+                if (!isGroup || !targetMention || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "promote");
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `L'utente @${targetName} è stato promosso amministratore del gruppo con successo.`, mentions: [targetMention] });
+                if (!config.stealthMode) {
+                    await sock.sendMessage(chatJid, { text: `Utente promosso ad admin in questo gruppo.`, mentions: [targetMention] });
                 }
                 return true;
             }
 
             case '!demuovi':
             case '!quickdemote': {
-                if (!isGroup || !targetMention) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !targetMention || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "demote");
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `👤 All'utente sono stati revocati tutti i poteri di admin` });
+                if (!config.stealthMode) {
+                    await sock.sendMessage(chatJid, { text: `Poteri revocati in questo gruppo.`, mentions: [targetMention] });
                 }
                 return true;
             }
 
             case '!multidemote': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const targets = getAllMentionedJids();
-                if (targets.length === 0) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Devi taggare almeno un utente per procedere" });
-                    return true;
-                }
-                await sock.groupParticipantsUpdate(chatJid, targets, "demote");
-                if (!groupSettings.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `👥 Tutti gli utenti taggati non sono più amministratori` });
+                if (targets.length > 0) {
+                    await sock.groupParticipantsUpdate(chatJid, targets, "demote");
+                    if (!config.stealthMode) await sock.sendMessage(chatJid, { text: `Admin multipli rimossi in questo gruppo.` });
                 }
                 return true;
             }
 
             case '!checkadmin': {
-                if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "Questo comando va eseguito all interno di un gruppo" });
-                    return true;
-                }
-                
+                if (!isGroup) return true;
                 const metadata = await sock.groupMetadata(chatJid);
-                
-                // Pulizia sicura del JID del mittente rimuovendo eventuali suffissi di dispositivi (:x)
                 const cleanSender = sender.replace(/:[0-9]+@/, '@').split(':')[0].split('@')[0];
-                
-                const pInfo = metadata.participants.find(p => {
-                    const cleanParticipantId = p.id.replace(/:[0-9]+@/, '@').split(':')[0].split('@')[0];
-                    return cleanParticipantId === cleanSender;
-                });
-                
+                const pInfo = metadata.participants.find(p => p.id.replace(/:[0-9]+@/, '@').split(':')[0].split('@')[0] === cleanSender);
                 const isUserAdmin = pInfo && (pInfo.admin === 'admin' || pInfo.admin === 'superadmin');
                 
                 if (isUserAdmin || isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "Verifica completata Risulti come Amministratore di questo gruppo Tutti i comandi di gestione e moderazione del bot sono attivi" });
+                    await sock.sendMessage(chatJid, { text: "Verifica OK: sei Amministratore in questo gruppo." });
                 } else {
-                    await sock.sendMessage(chatJid, { text: "Attenzione Non sei registrato come Amministratore in questo gruppo Le funzioni di controllo rimarranno bloccate" });
+                    await sock.sendMessage(chatJid, { text: "Non risulti Amministratore in questo gruppo specifico." });
                 }
                 return true;
             }
 
             case '!editgroup': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const mode = args[1];
                 if (mode === 'on') {
                     await sock.groupSettingUpdate(chatJid, 'locked');
-                    await sock.sendMessage(chatJid, { text: "🔒 Modifica delle informazioni riservata unicamente agli admin" });
+                    await sock.sendMessage(chatJid, { text: "🔒 Info modificabili solo dagli admin in questo gruppo." });
                 } else if (mode === 'off') {
                     await sock.groupSettingUpdate(chatJid, 'unlocked');
-                    await sock.sendMessage(chatJid, { text: "🔓 Adesso tutti i partecipanti possono modificare le info del gruppo" });
+                    await sock.sendMessage(chatJid, { text: "🔓 Info modificabili da tutti in questo gruppo." });
                 }
                 return true;
             }
 
             case '!approva': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
-                    await sock.groupJoinApprovalMode(chatJid, mode === 'on' ? 'on' : 'off').catch(() => {});
-                    await sock.sendMessage(chatJid, { text: `📋 Approvazione dei nuovi membri impostata su ${mode}` });
+                    await sock.groupJoinApprovalMode(chatJid, mode).catch(() => {});
+                    await sock.sendMessage(chatJid, { text: `📋 Approvazione membri impostata su ${mode} qui.` });
                 }
                 return true;
             }
 
             case '!addmember': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupAddMode(chatJid, mode === 'on' ? 'admin_add' : 'all_member_add').catch(() => {});
-                    await sock.sendMessage(chatJid, { text: `➕ Restrizione aggiunta membri aggiornata correttamente su ${mode}` });
+                    await sock.sendMessage(chatJid, { text: `➕ Aggiunta membri impostata su ${mode} qui.` });
                 }
                 return true;
             }
 
             case '!history': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupMemberAddMode(chatJid, mode === 'on' ? 'prompt' : 'no_prompt').catch(() => {});
-                    await sock.sendMessage(chatJid, { text: `📜 Invio cronologia messaggi impostato su ${mode}` });
+                    await sock.sendMessage(chatJid, { text: `📜 Cronologia ai nuovi impostata su ${mode} qui.` });
                 }
                 return true;
             }
 
             case '!invitelink': {
-                if (!isGroup) return true;
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (!isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                    return true;
-                }
-                const mode = args[1];
-                await sock.sendMessage(chatJid, { text: `🔗 Accesso tramite link di invito configurato su ${mode}` });
+                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid))) return true;
+                await sock.sendMessage(chatJid, { text: `🔗 Link d'invito aggiornato per questo gruppo.` });
                 return true;
             }
 
             case '!chiedialessio': {
                 const userMessage = messageText.replace(/^!chiedialessio/i, '').trim();
-                if (!userMessage) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Ciao se vuoi inviare un messaggio ad Alessio scrivi la tua richiesta subito dopo il comando" });
-                } else {
-                    let groupName = isGroup ? "Gruppo" : "Chat Privata";
-                    if (isGroup) {
-                        try {
-                            const metadata = await sock.groupMetadata(chatJid);
-                            groupName = metadata.subject || chatJid;
-                        } catch (e) {}
-                    }
-                    const forwardText = `✉ Nuova richiesta di supporto ricevuta\nDa utente: @${sender.split('@')[0]}\nProvenienza: ${groupName}\nTesto: ${userMessage}`;
-                    await sock.sendMessage(OWNER_JID, { text: forwardText, mentions: [sender] });
-                    await sock.sendMessage(chatJid, { text: "✉ Il tuo messaggio è stato inoltrato con successo ad Alessio" });
+                if (userMessage) {
+                    await sock.sendMessage(OWNER_JID, { text: `✉ Supporto da gruppo:\nUtente: @${sender.split('@')[0]}\nTesto: ${userMessage}`, mentions: [sender] });
+                    await sock.sendMessage(chatJid, { text: "✉ Messaggio inoltrato con successo ad Alessio." });
                 }
                 return true;
             }
@@ -679,152 +482,84 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!tagall':
             case '!tutti': {
                 if (isGroup) {
-                    groupSettings.waitingForTagAll.add(sender);
-                    await sock.sendMessage(chatJid, { text: "📢 Scrivi pure che cosa vorresti comunicare a tutti quanti" });
+                    config.waitingForTagAll.add(sender);
+                    await sock.sendMessage(chatJid, { text: "📢 Scrivi il messaggio da inviare a tutti in questo gruppo." });
                 }
                 return true;
             }
 
             case '!poll': {
                 const pollData = messageText.replace(/^!poll/i, '').trim().split(/\s+/);
-                const pollQuestion = pollData[0];
-                const pollOptions = pollData.slice(1);
-                if (pollQuestion && pollOptions.length > 1) {
-                    await sock.sendMessage(chatJid, { poll: { name: pollQuestion, values: pollOptions } });
-                } else {
-                    await sock.sendMessage(chatJid, { text: "⚠ Formato del sondaggio errato" });
+                if (pollData[0] && pollData.slice(1).length > 1) {
+                    await sock.sendMessage(chatJid, { poll: { name: pollData[0], values: pollData.slice(1) } });
                 }
                 return true;
             }
 
             case '!welcome': {
                 if (isGroup) {
-                    const action = args[1];
-                    if (action === 'on') {
-                        groupSettings.welcomeEnabled = true;
-                        await sock.sendMessage(chatJid, { text: "👋 Messaggi di benvenuto attivati con successo" });
-                    } else if (action === 'off') {
-                        groupSettings.welcomeEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "👋 Messaggi di benvenuto disattivati" });
+                    if (args[1] === 'on') {
+                        config.welcomeEnabled = true;
+                        await sock.sendMessage(chatJid, { text: "👋 Benvenuto attivato in questo gruppo." });
+                    } else if (args[1] === 'off') {
+                        config.welcomeEnabled = false;
+                        await sock.sendMessage(chatJid, { text: "👋 Benvenuto disattivato in questo gruppo." });
                     }
                 }
                 return true;
             }
 
             case '!setname': {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
+                if (isGroup && (await checkGroupAdminPrivileges(sock, chatJid))) {
                     const newName = messageText.replace(/^!setname/i, '').trim();
                     if (!newName) {
-                        groupSettings.waitingForSetName.add(sender);
-                        await sock.sendMessage(chatJid, { text: "🏷️ Dimmi quale nome vuoi dare al gruppo" });
+                        config.waitingForSetName.add(sender);
+                        await sock.sendMessage(chatJid, { text: "🏷️ Scrivi il nuovo nome per questo gruppo." });
                     } else {
                         await sock.groupUpdateSubject(chatJid, newName);
-                        await sock.sendMessage(chatJid, { text: `🏷️ Il titolo del gruppo è stato cambiato in modo perfetto` });
+                        await sock.sendMessage(chatJid, { text: `🏷️ Nome del gruppo aggiornato.` });
                     }
                 }
                 return true;
             }
 
             case '!lockinfo': {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
+                if (isGroup && (await checkGroupAdminPrivileges(sock, chatJid))) {
                     await sock.groupSettingUpdate(chatJid, 'locked');
-                    await sock.sendMessage(chatJid, { text: "🔒 Informazioni del gruppo bloccate con successo solo per gli admin" });
+                    await sock.sendMessage(chatJid, { text: "🔒 Info bloccate per questo gruppo." });
                 }
                 return true;
             }
 
             case '!unlockinfo': {
-                if (isGroup) {
-                    const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                    if (!isAdminOk) {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Errore: Non hai i privilegi di Amministratore in questo gruppo. I comandi del bot rimangono disattivati." });
-                        return true;
-                    }
+                if (isGroup && (await checkGroupAdminPrivileges(sock, chatJid))) {
                     await sock.groupSettingUpdate(chatJid, 'unlocked');
-                    await sock.sendMessage(chatJid, { text: "🔓 Informazioni del gruppo sbloccate per tutti quanti" });
+                    await sock.sendMessage(chatJid, { text: "🔓 Info sbloccate per questo gruppo." });
                 }
                 return true;
             }
 
             case '!link': {
                 if (isGroup) {
-                    const action = args[1];
-                    if (action === 'on') {
-                        groupSettings.linkFilter = true;
-                        await sock.sendMessage(chatJid, { text: "🌐 Filtro anti link esterni attivato correttamente" });
-                    } else if (action === 'off') {
-                        groupSettings.linkFilter = false;
-                        await sock.sendMessage(chatJid, { text: "🌐 Filtro anti link esterni disattivato" });
+                    if (args[1] === 'on') {
+                        config.linkFilter = true;
+                        await sock.sendMessage(chatJid, { text: "🌐 Filtro link attivato in questo gruppo." });
+                    } else if (args[1] === 'off') {
+                        config.linkFilter = false;
+                        await sock.sendMessage(chatJid, { text: "🌐 Filtro link disattivato in questo gruppo." });
                     }
                 }
                 return true;
             }
 
-            case '!offline':
-            case '!assente': {
-                if (isOwner(sender, sock)) {
-                    global.offlineMode = true;
-                    notifiedOnline.clear();
-                    await sock.sendMessage(chatJid, { text: "Modalità offline attivata con successo." });
-                }
-                return true;
-            }
-
-            case '!online':
-            case '!presente': {
-                if (isOwner(sender, sock)) {
-                    global.offlineMode = false;
-                    notifiedOnline.clear();
-                    await sock.sendMessage(chatJid, { text: "Modalità online attivata con successo." });
-                }
-                return true;
-            }
-
-            case '!protezione': {
-                if (isOwner(sender, sock)) {
-                    const action = args[1];
-                    if (action === 'on') {
-                        if (targetMention) {
-                            global.protectedUsers.add(targetMention);
-                            const targetName = targetMention.split('@')[0];
-                            await sock.sendMessage(chatJid, { text: `${targetName} è ora protetto con successo`, mentions: [targetMention] });
-                        } else {
-                            global.protectionEnabled = true;
-                            await sock.sendMessage(chatJid, { text: `L'owner del bot (+393534467571) è ora protetto con successo.` });
-                        }
-                    } else if (action === 'off') {
-                        global.protectionEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⚠️ Attenzione protezione del proprietario disattivata" });
-                    }
-                }
-                return true;
-            }
-
-            case '!gruppo': {
+            case '!cooldown': {
                 if (isGroup) {
-                    const action = args[1];
-                    if (action === 'off') {
-                        if (isOwner(sender, sock)) {
-                            groupSettings.inactiveGroups.add(chatJid);
-                            await sock.sendMessage(chatJid, { text: "🤖 Il bot è stato disattivato in questo gruppo" });
-                        } else {
-                            await sock.sendMessage(chatJid, { text: "⛔ Questo comando è riservato al proprietario" });
-                        }
-                    } else if (action === 'on') {
-                        if (isOwner(sender, sock)) {
-                            groupSettings.inactiveGroups.delete(chatJid);
-                            await sock.sendMessage(chatJid, { text: "🤖 Il bot è stato riattivato in questo gruppo" });
-                        }
+                    if (args[1] === 'on') {
+                        config.cooldownEnabled = true;
+                        await sock.sendMessage(chatJid, { text: "⏱️ Cooldown antispam attivato in questo gruppo." });
+                    } else if (args[1] === 'off') {
+                        config.cooldownEnabled = false;
+                        await sock.sendMessage(chatJid, { text: "⏱️ Cooldown disattivato in questo gruppo." });
                     }
                 }
                 return true;
@@ -834,7 +569,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (sender === OWNER_JID) {
                     if (targetMention) {
                         global.extraOwners.add(targetMention);
-                        global.protectedUsers.add(targetMention);
+                        config.protectedUsers.add(targetMention);
                         await sock.sendMessage(chatJid, { text: "👑 Nuovo proprietario aggiunto con successo" });
                     } else {
                         await sock.sendMessage(chatJid, { text: "⚠ Devi taggare un utente per promuoverlo" });
@@ -849,7 +584,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (sender === OWNER_JID) {
                     if (targetMention) {
                         global.extraOwners.delete(targetMention);
-                        global.protectedUsers.delete(targetMention);
+                        config.protectedUsers.delete(targetMention);
                         await sock.sendMessage(chatJid, { text: "🛡️ Ruolo di proprietario rimosso correttamente" });
                     } else {
                         await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente per rimuovere i poteri" });
@@ -860,149 +595,155 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
+            case '!offline':
+            case '!assente': {
+                if (isOwner(sender, sock)) {
+                    config.offlineMode = true;
+                    await sock.sendMessage(chatJid, { text: "Modalità offline attiva." });
+                }
+                return true;
+            }
+
+            case '!online':
+            case '!presente': {
+                if (isOwner(sender, sock)) {
+                    config.offlineMode = false;
+                    await sock.sendMessage(chatJid, { text: "Modalità online attiva." });
+                }
+                return true;
+            }
+
+            case '!protezione': {
+                if (isOwner(sender, sock)) {
+                    const action = args[1];
+                    if (action === 'on') {
+                        if (targetMention) {
+                            config.protectedUsers.add(targetMention);
+                            await sock.sendMessage(chatJid, { text: `Utente protetto con successo in questo gruppo.`, mentions: [targetMention] });
+                        } else {
+                            config.protectionEnabled = true;
+                            await sock.sendMessage(chatJid, { text: `Protezione avanzata attiva.` });
+                        }
+                    } else if (action === 'off') {
+                        config.protectionEnabled = false;
+                        await sock.sendMessage(chatJid, { text: "⚠️ Protezione disattivata." });
+                    }
+                }
+                return true;
+            }
+
             case '!broadcast': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
+                if (!isOwner(sender, sock)) return true;
                 const broadText = messageText.replace(/^!broadcast/i, '').trim();
-                if (!broadText) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il testo da inviare in broadcast" });
-                    return true;
-                }
-                await sock.sendMessage(chatJid, { text: `📡 Broadcast avviato con successo per tutti i gruppi.` });
+                if (!broadText) return true;
+                await sock.sendMessage(chatJid, { text: `📡 Broadcast inviato.` });
                 return true;
             }
 
             case '!inspect': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
-                if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Tagga un utente da ispezionare" });
-                    return true;
-                }
-                const userWarns = warnings.get(targetMention) || 0;
-                const isUserMuted = mutedUsers.has(targetMention);
-                const isUserProt = isProtected(targetMention);
-                await sock.sendMessage(chatJid, { 
-                    text: `🔍 **Scheda Informativa Utente**\n• JID: ${targetMention}\n• Warn ricevuti: ${userWarns}\n• Mutato: ${isUserMuted ? 'Sì' : 'No'}\n• Protetto: ${isUserProt ? 'Sì' : 'No'}`,
-                    mentions: [targetMention]
-                });
+                if (!isOwner(sender, sock) || !targetMention) return true;
+                const userWarns = warnings.get(targetMention + chatJid) || 0;
+                await sock.sendMessage(chatJid, { text: `🔍 **Scheda Utente (Qui)**\n• Warn: ${userWarns}`, mentions: [targetMention] });
                 return true;
             }
 
             case '!lockgroup': {
-                if (!isOwner(sender, sock)) return true;
-                if (isGroup) {
-                    groupSettings.lockedGroups.add(chatJid);
-                    await sock.sendMessage(chatJid, { text: "🔐 Chat del gruppo bloccata: solo gli amministratori possono scrivere." });
+                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid)))) {
+                    if (isGroup) {
+                        config.isLocked = true;
+                        await sock.sendMessage(chatJid, { text: "🔐 Questo gruppo è ora bloccato: solo gli admin possono scrivere." });
+                    }
                 }
                 return true;
             }
 
             case '!unlockgroup': {
-                if (!isOwner(sender, sock)) return true;
-                if (isGroup) {
-                    groupSettings.lockedGroups.delete(chatJid);
-                    await sock.sendMessage(chatJid, { text: "🔓 Chat del gruppo sbloccata per tutti i partecipanti." });
-                    return true;
+                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid)))) {
+                    if (isGroup) {
+                        config.isLocked = false;
+                        await sock.sendMessage(chatJid, { text: "🔓 Questo gruppo è ora sbloccato per tutti." });
+                    }
                 }
                 return true;
             }
 
             case '!backup': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
-                const backupData = `💾 **Backup Dati Bot**\n- Mutati attivi: ${mutedUsers.size}\n- Warn registrati: ${warnings.size}\n- Blacklist: ${blacklist.size}`;
-                await sock.sendMessage(OWNER_JID, { text: backupData });
-                await sock.sendMessage(chatJid, { text: "💾 Backup inviato con successo in chat privata all'owner." });
+                if (!isOwner(sender, sock)) return true;
+                await sock.sendMessage(OWNER_JID, { text: `💾 Backup eseguito.` });
+                await sock.sendMessage(chatJid, { text: "💾 Backup inviato in privato." });
                 return true;
             }
 
             case '!emergencyoff': {
                 if (!isOwner(sender, sock)) return true;
-                groupSettings.emergencyStopped = true;
-                await sock.sendMessage(chatJid, { text: "⚡ Emergenza attivata: tutte le funzioni del bot sono state disattivate." });
+                config.isInactive = true;
+                await sock.sendMessage(chatJid, { text: "⚡ Emergenza attivata qui." });
                 return true;
             }
 
             case '!emergencyon': {
                 if (!isOwner(sender, sock)) return true;
-                groupSettings.emergencyStopped = false;
-                await sock.sendMessage(chatJid, { text: "⚡ Bot riattivato completamente con successo." });
+                config.isInactive = false;
+                await sock.sendMessage(chatJid, { text: "⚡ Bot riattivato qui." });
                 return true;
             }
 
             case '!statsbot': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
-                await sock.sendMessage(chatJid, { text: `📈 **Statistiche Bot**\n• Gruppi inattivi: ${groupSettings.inactiveGroups.size}\n• Gruppi bloccati: ${groupSettings.lockedGroups.size}\n• Utenti in blacklist: ${blacklist.size}` });
+                if (!isOwner(sender, sock)) return true;
+                await sock.sendMessage(chatJid, { text: `📈 Statistiche attive.` });
                 return true;
             }
 
             case '!stealth': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
-                const action = args[1];
-                if (action === 'on') {
-                    groupSettings.stealthMode = true;
-                    await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth (invisibile) attivata con successo." });
-                } else if (action === 'off') {
-                    groupSettings.stealthMode = false;
-                    await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth disattivata." });
+                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid)))) {
+                    if (args[1] === 'on') {
+                        config.stealthMode = true;
+                        await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth attivata solo per questo gruppo." });
+                    } else if (args[1] === 'off') {
+                        config.stealthMode = false;
+                        await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth disattivata in questo gruppo." });
+                    }
                 }
                 return true;
             }
 
             case '!blockuser': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
-                if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente da aggiungere alla blacklist" });
-                    return true;
-                }
+                if (!isOwner(sender, sock) || !targetMention) return true;
                 blacklist.add(targetMention);
-                await sock.sendMessage(chatJid, { text: "🚫 Utente inserito nella blacklist globale con successo.", mentions: [targetMention] });
+                await sock.sendMessage(chatJid, { text: "🚫 Utente inserito nella blacklist globale.", mentions: [targetMention] });
                 return true;
             }
 
             case '!unblockuser': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
-                if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente da rimuovere dalla blacklist" });
-                    return true;
-                }
+                if (!isOwner(sender, sock) || !targetMention) return true;
                 blacklist.delete(targetMention);
                 await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention] });
                 return true;
             }
 
             case '!cleandb': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario" });
-                    return true;
-                }
+                if (!isOwner(sender, sock)) return true;
                 warnings.clear();
-                await sock.sendMessage(chatJid, { text: "🗄 Pulizia automatica del database completata con successo." });
+                await sock.sendMessage(chatJid, { text: "🗄 Pulizia database completata." });
+                return true;
+            }
+
+            case '!gruppo': {
+                if (isGroup && isOwner(sender, sock)) {
+                    if (args[1] === 'off') {
+                        config.isInactive = true;
+                        await sock.sendMessage(chatJid, { text: "🤖 Bot disattivato in questo specifico gruppo." });
+                    } else if (args[1] === 'on') {
+                        config.isInactive = false;
+                        await sock.sendMessage(chatJid, { text: "🤖 Bot riattivato in questo specifico gruppo." });
+                    }
+                }
                 return true;
             }
         }
 
     } catch (error) {
-        console.error("Errore nell'esecuzione dei comandi:", error);
+        console.error("Errore:", error);
     }
     return false;
 }
