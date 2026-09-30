@@ -29,7 +29,7 @@ function getGroupConfig(chatJid) {
     return groupsConfig.get(chatJid);
 }
 
-// Dati del proprietario principale
+// Il tuo numero impostato per il bot
 let OWNER_JID = "393534467571@s.whatsapp.net";
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
 
@@ -77,14 +77,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup === undefined) isGroup = chatJid.endsWith('@g.us');
         if (!sender) sender = m.key.participant || chatJid;
 
-        // 🥷 SEGRETO: Controllo presenza di Aleh nel gruppo. Se c'è, il bot sta completamente zitto e non fa nulla.
+        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto
         const alehJid = "3924911895@s.whatsapp.net";
         if (isGroup) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
                 const isAlehPresent = metadata.participants.some(p => p.id.includes(alehJid.split('@')[0]));
                 if (isAlehPresent) {
-                    return true; // Il bot ignora tutto e sta in silenzio
+                    return true; // Il bot ignora tutto e non risponde
                 }
             } catch (e) {}
         }
