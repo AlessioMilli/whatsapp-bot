@@ -1,3 +1,4 @@
+
 // Mappa per memorizzare il nome dei gruppi associati al loro JID (utile per i comandi da privata)
 const groupNameToJid = new Map();
 
