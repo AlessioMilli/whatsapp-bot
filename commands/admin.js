@@ -229,7 +229,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         // Protezione utente nel gruppo
         if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
-            await sock.sendMessage(chatJid, { text: `🛡️️ Questo utente è protetto in questo gruppo` });
+            await sock.sendMessage(chatJid, { text: `🛡 Questo utente è protetto in questo gruppo` });
             return true;
         }
 
@@ -291,7 +291,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
 9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
-10. \`!associa [nome_breve] | [nome_whatsapp]\` 🔗 - Associa un nome personalizzato al JID del gruppo dalla chat privata`;
+10. \`!associa [nome_breve] | [nome_whatsapp]\` 🔗 - Associa nomi personalizzati ai JID dei gruppi (supporta più associazioni separate da punto e virgola `;` o a capo)`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -540,7 +540,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                             let replyMsg = `✅ Il comando è stato applicato con successo per ${successCount} gruppo/i specificato/i (Benvenuto impostato su: ${action.toUpperCase()}).`;
                             if (notFoundGroups.length > 0) {
-                                replyMsg += `\n⚠️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}.`;
+                                replyMsg += `\n⚠️️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}.`;
                             }
                             await sock.sendMessage(chatJid, { text: replyMsg });
                         } else {
@@ -609,7 +609,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         await sock.sendMessage(chatJid, { text: "⏱️ Cooldown antispam attivato in questo gruppo." });
                     } else if (args[1] === 'off') {
                         config.cooldownEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⏱️️ Cooldown disattivato in questo gruppo." });
+                        await sock.sendMessage(chatJid, { text: "⏱ Cooldown disattivato in questo gruppo." });
                     }
                 }
                 return true;
@@ -780,34 +780,49 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!associa': {
                 if (!isGroup && isOwner(sender, sock)) {
-                    const argsAssocia = messageText.replace(/^!associa/i, '').trim();
-                    const parts = argsAssocia.split('|').map(p => p.trim());
-                    
-                    if (parts.length === 2) {
-                        const nomePersonalizzato = parts[0].toLowerCase();
-                        const nomeWhatsapp = parts[1].toLowerCase();
-                        
-                        let targetJid = null;
-                        
-                        const chats = Object.values(sock.chats || {});
-                        for (const chat of chats) {
-                            if (chat.id && chat.id.endsWith('@g.us') && chat.subject) {
-                                if (chat.subject.toLowerCase().includes(nomeWhatsapp)) {
-                                    targetJid = chat.id;
-                                    break;
+                    const rawInput = messageText.replace(/^!associa/i, '').trim();
+                    if (!rawInput) {
+                        await sock.sendMessage(sender, { text: `⚠️ Sintassi non corretta.\nUsa il formato:\n!associa [nome_breve] | [nome_whatsapp]\n(Puoi inserire più associazioni separandole con il punto e virgola ';' o andando a capo)` });
+                        return true;
+                    }
+
+                    // Suddivide le singole righe o i gruppi separati da punto e virgola ';'
+                    const entries = rawInput.split(/[\n;]+/).map(e => e.trim()).filter(Boolean);
+                    let successCount = 0;
+                    let reportLines = [];
+
+                    const chats = Object.values(sock.chats || {});
+
+                    for (const entry of entries) {
+                        const parts = entry.split('|').map(p => p.trim());
+                        if (parts.length === 2) {
+                            const nomePersonalizzato = parts[0].toLowerCase();
+                            const nomeWhatsapp = parts[1].toLowerCase();
+                            
+                            let targetJid = null;
+                            for (const chat of chats) {
+                                if (chat.id && chat.id.endsWith('@g.us') && chat.subject) {
+                                    if (chat.subject.toLowerCase().includes(nomeWhatsapp)) {
+                                        targetJid = chat.id;
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        
-                        if (targetJid) {
-                            groupNameToJid.set(nomePersonalizzato, targetJid);
-                            await sock.sendMessage(sender, { text: `✅ Associazione riuscita!\nNome breve: "${nomePersonalizzato}"\nGruppo WhatsApp: "${nomeWhatsapp}"\nJID: ${targetJid}` });
+                            
+                            if (targetJid) {
+                                groupNameToJid.set(nomePersonalizzato, targetJid);
+                                successCount++;
+                                reportLines.push(`✅ "${nomePersonalizzato}" ➔ ${parts[1]}`);
+                            } else {
+                                reportLines.push(`⚠️ Gruppo non trovato: "${parts[1]}"`);
+                            }
                         } else {
-                            await sock.sendMessage(sender, { text: `⚠️ Non ho trovato nessun gruppo attivo con il nome "${nomeWhatsapp}". Assicurati che il bot sia dentro quel gruppo e che ci sia stata almeno un'attività recente.` });
+                            reportLines.push(`❌ Riga non valida: "${entry}"`);
                         }
-                    } else {
-                        await sock.sendMessage(sender, { text: `⚠️ Sintassi non corretta.\nUsa il formato:\n!associa [nome_breve] | [nome_whatsapp]\nEsempio: !associa gaming | Gruppo Gaming Ufficiale` });
                     }
+
+                    let finalMsg = `📊 **Report Associazioni (${successCount}/${entries.length} riuscite):**\n\n` + reportLines.join('\n');
+                    await sock.sendMessage(sender, { text: finalMsg });
                 }
                 return true;
             }
