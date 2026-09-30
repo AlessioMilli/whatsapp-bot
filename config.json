@@ -1,1 +1,38 @@
+// Mappa per memorizzare il nome dei gruppi associati al loro JID (utile per i comandi da privata)
+const groupNameToJid = new Map();
 
+// Inserimento manuale di tutti i gruppi della community e dei canali
+const caricaGruppiFissi = () => {
+    const gruppi = [
+        "gaming",
+        "news e attualità",
+        "gruppo ambasciate",
+        "anime and more",
+        "musica",
+        "gruppo per accedere all'impero (universo parallelo)",
+        "viaggi",
+        "gruppo torneo canali",
+        "gruppo cazzate",
+        "generale",
+        "tribunale",
+        "gruppo frontiere",
+        "sponsor and links",
+        "gruppo esterno alla community per le dirette streaming + bot",
+        "foto, disegni and more!",
+        "consiglio admin + owner",
+        "gruppo eveneti e olimpiadi",
+        "parco imperiale (generale)"
+    ];
+
+    // Assegna una chiave in minuscolo e pulita per facilitare il riconoscimento da chat privata
+    gruppi.forEach(nome => {
+        const chiave = nome.toLowerCase().trim();
+        // Se non hai ancora l'ID reale (@g.us), salviamo temporaneamente il nome stesso o un identificativo 
+        // finché non viene associato all'ID effettivo della chat.
+        if (!groupNameToJid.has(chiave)) {
+            groupNameToJid.set(chiave, chiave + "@g.us");
+        }
+    });
+};
+
+caricaGruppiFissi();
