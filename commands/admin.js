@@ -9,9 +9,6 @@ const cooldowns = new Map();
 // Gestione delle configurazioni specifiche per ogni singolo gruppo (chatJid -> impostazioni)
 const groupsConfig = new Map();
 
-// Mappa per memorizzare il nome dei gruppi associati al loro JID (utile per i comandi da privata)
-const groupNameToJid = new Map();
-
 function getGroupConfig(chatJid) {
     if (!groupsConfig.has(chatJid)) {
         groupsConfig.set(chatJid, {
@@ -81,16 +78,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (!sender) sender = m.key.participant || chatJid;
 
         const config = getGroupConfig(chatJid);
-
-        // Memorizza l'associazione nome-JID del gruppo se siamo in un gruppo
-        if (isGroup) {
-            try {
-                const metadata = await sock.groupMetadata(chatJid);
-                if (metadata.subject) {
-                    groupNameToJid.set(metadata.subject.toLowerCase().trim(), chatJid);
-                }
-            } catch (e) {}
-        }
 
         if (blacklist.has(sender) && !isOwner(sender, sock)) return true;
 
@@ -211,7 +198,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             if (newTitle && isGroup) {
                 if (await checkGroupAdminPrivileges(sock, chatJid)) {
                     await sock.groupUpdateSubject(chatJid, newTitle);
-                    await sock.sendMessage(chatJid, { text: `🏷️️ Il nome del gruppo è stato aggiornato in modo perfetto` });
+                    await sock.sendMessage(chatJid, { text: `🏷 Il nome del gruppo è stato aggiornato in modo perfetto` });
                 }
             }
             return true;
@@ -290,8 +277,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
-10. \`!associa [nome_gruppo]\` 🔗 - Associa direttamente i gruppi tramite i loro nomi reali (supporta più nomi separati da punto e virgola \`;\` o andando a capo)`;
+9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -510,44 +496,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!welcome': {
-                if (!isGroup && isOwner(sender, sock)) {
-                    const action = args[1]?.toLowerCase();
-                    if (action === 'on' || action === 'off') {
-                        const rawTargetGroups = messageText.replace(new RegExp(`^!welcome\\s+${action}`, 'i'), '').trim();
-                        
-                        if (rawTargetGroups) {
-                            const groupNamesInput = rawTargetGroups.split(',').map(n => n.trim().toLowerCase()).filter(Boolean);
-                            let successCount = 0;
-                            let notFoundGroups = [];
-
-                            for (const nameInput of groupNamesInput) {
-                                let foundJid = null;
-                                for (const [storedName, jid] of groupNameToJid.entries()) {
-                                    if (storedName.includes(nameInput)) {
-                                        foundJid = jid;
-                                        break;
-                                    }
-                                }
-
-                                if (foundJid) {
-                                    const targetConfig = getGroupConfig(foundJid);
-                                    targetConfig.welcomeEnabled = (action === 'on');
-                                    successCount++;
-                                } else {
-                                    notFoundGroups.push(nameInput);
-                                }
-                            }
-
-                            let replyMsg = `✅ Il comando è stato applicato con successo per ${successCount} gruppo/i specificato/i (Benvenuto impostato su: ${action.toUpperCase()}).`;
-                            if (notFoundGroups.length > 0) {
-                                replyMsg += `\n⚠️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}.`;
-                            }
-                            await sock.sendMessage(chatJid, { text: replyMsg });
-                        } else {
-                            await sock.sendMessage(chatJid, { text: "⚠️ Specifica i nomi dei gruppi dopo on/off (es. !welcome on NomeGruppo)." });
-                        }
-                    }
-                } else if (isGroup) {
+                if (isGroup) {
                     if (args[1] === 'on') {
                         config.welcomeEnabled = true;
                         await sock.sendMessage(chatJid, { text: "👋 Benvenuto attivato in questo gruppo." });
@@ -778,95 +727,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!associa': {
-                if (!isGroup && isOwner(sender, sock)) {
-                    const rawInput = messageText.replace(/^!associa/i, '').trim();
-                    if (!rawInput) {
-                        await sock.sendMessage(sender, { text: `⚠️ Inserisci i nomi dei gruppi da associare (separati da ';' o andando a capo).` });
-                        return true;
-                    }
-
-                    // Divide la lista usando il punto e virgola ';' o andando a capo
-                    const groupNamesInput = rawInput.split(/[\n;]+/).map(n => n.trim().toLowerCase()).filter(Boolean);
-                    let successCount = 0;
-                    let reportLines = [];
-
-                    const chats = Object.values(sock.chats || {});
-
-                    for (const nameInput of groupNamesInput) {
-                        let targetJid = null;
-                        let matchedSubject = "";
-
-                        for (const chat of chats) {
-                            if (chat.id && chat.id.endsWith('@g.us') && chat.subject) {
-                                if (chat.subject.toLowerCase().includes(nameInput)) {
-                                    targetJid = chat.id;
-                                    matchedSubject = chat.subject;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (targetJid) {
-                            // Salva l'associazione usando direttamente il nome inserito (e anche il nome reale del gruppo)
-                            groupNameToJid.set(nameInput, targetJid);
-                            groupNameToJid.set(matchedSubject.toLowerCase().trim(), targetJid);
-                            successCount++;
-                            reportLines.push(`✅ Assoggettato: "${matchedSubject}"`);
-                        } else {
-                            reportLines.push(`⚠️️ Non trovato: "${nameInput}"`);
-                        }
-                    }
-
-                    let finalMsg = `📊 **Report Associazioni (${successCount}/${groupNamesInput.length} riuscite):**\n\n` + reportLines.join('\n');
-                    await sock.sendMessage(sender, { text: finalMsg });
-                }
-                return true;
-            }
-
             case '!gruppo': {
-                // Gestione da chat privata del proprietario con indicazione dei nomi dei gruppi
-                if (!isGroup && isOwner(sender, sock)) {
-                    const action = args[1]?.toLowerCase();
-                    if (action === 'on' || action === 'off') {
-                        const rawTargetGroups = messageText.replace(new RegExp(`^!gruppo\\s+${action}`, 'i'), '').trim();
-                        
-                        if (rawTargetGroups) {
-                            const groupNamesInput = rawTargetGroups.split(',').map(n => n.trim().toLowerCase()).filter(Boolean);
-                            let successCount = 0;
-                            let notFoundGroups = [];
-
-                            for (const nameInput of groupNamesInput) {
-                                let foundJid = null;
-                                for (const [storedName, jid] of groupNameToJid.entries()) {
-                                    if (storedName.includes(nameInput)) {
-                                        foundJid = jid;
-                                        break;
-                                    }
-                                }
-
-                                if (foundJid) {
-                                    const targetConfig = getGroupConfig(foundJid);
-                                    // Se action è 'off', impostiamo isInactive a true (bot disattivato); se 'on', a false (bot attivo)
-                                    targetConfig.isInactive = (action === 'off');
-                                    successCount++;
-                                } else {
-                                    notFoundGroups.push(nameInput);
-                                }
-                            }
-
-                            let replyMsg = `✅ Il comando è stato applicato con successo per ${successCount} gruppo/i specificato/i (Stato Bot nel gruppo: ${action.toUpperCase()}).`;
-                            if (notFoundGroups.length > 0) {
-                                replyMsg += `\n⚠️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}.`;
-                            }
-                            await sock.sendMessage(chatJid, { text: replyMsg });
-                        } else {
-                            await sock.sendMessage(chatJid, { text: "⚠️ Specifica i nomi dei gruppi dopo on/off (es. !gruppo off NomeGruppo)." });
-                        }
-                    }
-                } 
-                // Gestione classica se digitato direttamente dentro un gruppo
-                else if (isGroup && isOwner(sender, sock)) {
+                if (isGroup && isOwner(sender, sock)) {
                     if (args[1] === 'off') {
                         config.isInactive = true;
                         await sock.sendMessage(chatJid, { text: "🤖 Bot disattivato in questo specifico gruppo." });
