@@ -2,12 +2,15 @@ import { DisconnectReason } from '@whiskeysockets/baileys';
 
 // Strutture dati globali di base
 const blacklist = new Set();
-const warnings = new Map(); // key: userId + chatJid, value: count
+const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
 
 // Gestione delle configurazioni specifiche per ogni singolo gruppo (chatJid -> impostazioni)
 const groupsConfig = new Map();
+
+// Mappa per memorizzare il nome dei gruppi associati al loro JID (utile per i comandi da privata)
+const groupNameToJid = new Map();
 
 function getGroupConfig(chatJid) {
     if (!groupsConfig.has(chatJid)) {
@@ -41,7 +44,6 @@ const isProtected = (jid, config) => {
     return jid === OWNER_JID || config.protectedUsers.has(jid);
 };
 
-// 🛡️️ Funzione di controllo preventivo permessi admin nel gruppo specifico
 async function checkGroupAdminPrivileges(sock, chatJid) {
     try {
         const metadata = await sock.groupMetadata(chatJid);
@@ -79,6 +81,16 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (!sender) sender = m.key.participant || chatJid;
 
         const config = getGroupConfig(chatJid);
+
+        // Memorizza l'associazione nome-JID del gruppo se siamo in un gruppo
+        if (isGroup) {
+            try {
+                const metadata = await sock.groupMetadata(chatJid);
+                if (metadata.subject) {
+                    groupNameToJid.set(metadata.subject.toLowerCase().trim(), chatJid);
+                }
+            } catch (e) {}
+        }
 
         if (blacklist.has(sender) && !isOwner(sender, sock)) return true;
 
@@ -241,7 +253,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
 • \`!multidemote @u1 @u2...\` 👥 - Rimuove i poteri di admin a più utenti insieme
 
-⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
+⚙️️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!checkadmin\` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
 • \`!editgroup on/off\` ✏️ - Gestisce la modifica info gruppo per soli admin
@@ -252,7 +264,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!setname [nome]\` 🏷️ - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
-• \`!cooldown on/off\` ⏱️️ - Limite tempo antispam tra comandi
+• \`!cooldown on/off\` ⏱ - Limite tempo antispam tra comandi
 
 💬 **SUPPORTO E BENVENUTO**
 • \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
@@ -483,7 +495,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!tutti': {
                 if (isGroup) {
                     config.waitingForTagAll.add(sender);
-                    await sock.sendMessage(chatJid, { text: "📢 Scrivi il messaggio da inviare a tutti in questo gruppo." });
+                    await sock.sendMessage(chatJid, { text: "📢 Scrivi il messaggio da inviato a tutti in questo gruppo." });
                 }
                 return true;
             }
@@ -497,7 +509,50 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!welcome': {
-                if (isGroup) {
+                // Gestione da chat privata del proprietario con indicazione dei nomi dei gruppi
+                if (!isGroup && isOwner(sender, sock)) {
+                    const action = args[1]?.toLowerCase();
+                    if (action === 'on' || action === 'off') {
+                        // Estrae i nomi dei gruppi passati dopo on/off (es. "!welcome on Gruppo 1, Gruppo 2" o simili)
+                        const rawTargetGroups = messageText.replace(new RegExp(`^!welcome\\s+${action}`, 'i'), '').trim();
+                        
+                        if (rawTargetGroups) {
+                            // Divide i nomi dei gruppi separati da virgola
+                            const groupNamesInput = rawTargetGroups.split(',').map(n => n.trim().toLowerCase()).filter(Boolean);
+                            let successCount = 0;
+                            let notFoundGroups = [];
+
+                            for (const nameInput of groupNamesInput) {
+                                let foundJid = null;
+                                // Cerca tra i gruppi memorizzati quale corrisponde al nome inserito
+                                for (const [storedName, jid] of groupNameToJid.entries()) {
+                                    if (storedName.includes(nameInput)) {
+                                        foundJid = jid;
+                                        break;
+                                    }
+                                }
+
+                                if (foundJid) {
+                                    const targetConfig = getGroupConfig(foundJid);
+                                    targetConfig.welcomeEnabled = (action === 'on');
+                                    successCount++;
+                                } else {
+                                    notFoundGroups.push(nameInput);
+                                }
+                            }
+
+                            let replyMsg = `✅ Il comando è stato applicato con successo per ${successCount} gruppo/i specificato/i (Benvenuto impostato su: ${action.toUpperCase()}).`;
+                            if (notFoundGroups.length > 0) {
+                                replyMsg += `\n⚠️ Nota: Non sono riuscito a trovare i seguenti gruppi nei miei registri recenti: ${notFoundGroups.join(', ')}. Assicurati che il bot sia attivo in quei gruppi e che abbiano comunicato almeno una volta.`;
+                            }
+                            await sock.sendMessage(chatJid, { text: replyMsg });
+                        } else {
+                            await sock.sendMessage(chatJid, { text: "⚠️ Specifica i nomi dei gruppi dopo on/off (es. !welcome on NomeGruppo)." });
+                        }
+                    }
+                } 
+                // Gestione classica se digitato direttamente dentro un gruppo
+                else if (isGroup) {
                     if (args[1] === 'on') {
                         config.welcomeEnabled = true;
                         await sock.sendMessage(chatJid, { text: "👋 Benvenuto attivato in questo gruppo." });
@@ -695,7 +750,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!stealth': {
-                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid)))) {
+                if (isOwner(sender, sock) / (isGroup && (await checkGroupAdminPrivileges(sock, chatJid)))) {
                     if (args[1] === 'on') {
                         config.stealthMode = true;
                         await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth attivata solo per questo gruppo." });
