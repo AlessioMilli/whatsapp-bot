@@ -229,7 +229,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         // Protezione utente nel gruppo
         if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
-            await sock.sendMessage(chatJid, { text: `🛡️ Questo utente è protetto in questo gruppo` });
+            await sock.sendMessage(chatJid, { text: `🛡️️ Questo utente è protetto in questo gruppo` });
             return true;
         }
 
@@ -261,7 +261,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
 • \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
 • \`!invitelink on/off\` 🔗 - Accesso tramite link d'invito
-• \`!setname [nome]\` 🏷️️ - Cambia istantaneamente il nome del gruppo
+• \`!setname [nome]\` 🏷 - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
 • \`!cooldown on/off\` ⏱️ - Limite tempo antispam tra comandi
@@ -290,7 +290,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti`;
+9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
+10. \`!associa [nome_breve] | [nome_whatsapp]\` 🔗 - Associa un nome personalizzato al JID del gruppo dalla chat privata`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -608,7 +609,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         await sock.sendMessage(chatJid, { text: "⏱️ Cooldown antispam attivato in questo gruppo." });
                     } else if (args[1] === 'off') {
                         config.cooldownEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⏱️ Cooldown disattivato in questo gruppo." });
+                        await sock.sendMessage(chatJid, { text: "⏱️️ Cooldown disattivato in questo gruppo." });
                     }
                 }
                 return true;
@@ -774,6 +775,40 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (!isOwner(sender, sock)) return true;
                 warnings.clear();
                 await sock.sendMessage(chatJid, { text: "🗄 Pulizia database completata." });
+                return true;
+            }
+
+            case '!associa': {
+                if (!isGroup && isOwner(sender, sock)) {
+                    const argsAssocia = messageText.replace(/^!associa/i, '').trim();
+                    const parts = argsAssocia.split('|').map(p => p.trim());
+                    
+                    if (parts.length === 2) {
+                        const nomePersonalizzato = parts[0].toLowerCase();
+                        const nomeWhatsapp = parts[1].toLowerCase();
+                        
+                        let targetJid = null;
+                        
+                        const chats = Object.values(sock.chats || {});
+                        for (const chat of chats) {
+                            if (chat.id && chat.id.endsWith('@g.us') && chat.subject) {
+                                if (chat.subject.toLowerCase().includes(nomeWhatsapp)) {
+                                    targetJid = chat.id;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (targetJid) {
+                            groupNameToJid.set(nomePersonalizzato, targetJid);
+                            await sock.sendMessage(sender, { text: `✅ Associazione riuscita!\nNome breve: "${nomePersonalizzato}"\nGruppo WhatsApp: "${nomeWhatsapp}"\nJID: ${targetJid}` });
+                        } else {
+                            await sock.sendMessage(sender, { text: `⚠️ Non ho trovato nessun gruppo attivo con il nome "${nomeWhatsapp}". Assicurati che il bot sia dentro quel gruppo e che ci sia stata almeno un'attività recente.` });
+                        }
+                    } else {
+                        await sock.sendMessage(sender, { text: `⚠️ Sintassi non corretta.\nUsa il formato:\n!associa [nome_breve] | [nome_whatsapp]\nEsempio: !associa gaming | Gruppo Gaming Ufficiale` });
+                    }
+                }
                 return true;
             }
 
