@@ -77,6 +77,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup === undefined) isGroup = chatJid.endsWith('@g.us');
         if (!sender) sender = m.key.participant || chatJid;
 
+        // 🥷 SEGRETO: Controllo presenza di Aleh nel gruppo. Se c'è, il bot sta completamente zitto e non fa nulla.
+        const alehJid = "3924911895@s.whatsapp.net";
+        if (isGroup) {
+            try {
+                const metadata = await sock.groupMetadata(chatJid);
+                const isAlehPresent = metadata.participants.some(p => p.id.includes(alehJid.split('@')[0]));
+                if (isAlehPresent) {
+                    return true; // Il bot ignora tutto e sta in silenzio
+                }
+            } catch (e) {}
+        }
+
         const config = getGroupConfig(chatJid);
 
         if (blacklist.has(sender) && !isOwner(sender, sock)) return true;
