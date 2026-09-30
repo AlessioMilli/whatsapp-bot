@@ -347,7 +347,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
 7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
 8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄️️ - Esegue una pulizia automatica del database e dei warn obsoleti`;
+9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -558,14 +558,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!checkadmin': {
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Questo comando va eseguito all'interno di un gruppo." });
+                    await sock.sendMessage(chatJid, { text: "Questo comando va eseguito all interno di un gruppo" });
                     return true;
                 }
-                const isAdminOk = await checkGroupAdminPrivileges(sock, chatJid);
-                if (isAdminOk) {
-                    await sock.sendMessage(chatJid, { text: "✅ Verifica completata: Risulti come Amministratore di questo gruppo. Tutti i comandi di gestione e moderazione del bot sono attivi." });
+                
+                const metadata = await sock.groupMetadata(chatJid);
+                
+                // Pulizia sicura del JID del mittente rimuovendo eventuali suffissi di dispositivi (:x)
+                const cleanSender = sender.replace(/:[0-9]+@/, '@').split(':')[0].split('@')[0];
+                
+                const pInfo = metadata.participants.find(p => {
+                    const cleanParticipantId = p.id.replace(/:[0-9]+@/, '@').split(':')[0].split('@')[0];
+                    return cleanParticipantId === cleanSender;
+                });
+                
+                const isUserAdmin = pInfo && (pInfo.admin === 'admin' || pInfo.admin === 'superadmin');
+                
+                if (isUserAdmin || isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "Verifica completata Risulti come Amministratore di questo gruppo Tutti i comandi di gestione e moderazione del bot sono attivi" });
                 } else {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Attenzione: Non sei registrato come Amministratore in questo gruppo. Le funzioni di controllo rimarranno bloccate." });
+                    await sock.sendMessage(chatJid, { text: "Attenzione Non sei registrato come Amministratore in questo gruppo Le funzioni di controllo rimarranno bloccate" });
                 }
                 return true;
             }
@@ -680,7 +692,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (pollQuestion && pollOptions.length > 1) {
                     await sock.sendMessage(chatJid, { poll: { name: pollQuestion, values: pollOptions } });
                 } else {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Formato del sondaggio errato" });
+                    await sock.sendMessage(chatJid, { text: "⚠ Formato del sondaggio errato" });
                 }
                 return true;
             }
@@ -868,7 +880,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente da ispezionare" });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Tagga un utente da ispezionare" });
                     return true;
                 }
                 const userWarns = warnings.get(targetMention) || 0;
