@@ -6,6 +6,9 @@ const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
 
+// Archivio globale di tutti i gruppi in cui il bot viene rilevato automaticamente
+const savedGroups = new Map();
+
 // Gestione delle configurazioni specifiche per ogni singolo gruppo (chatJid -> impostazioni)
 const groupsConfig = new Map();
 
@@ -76,6 +79,24 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (!chatJid) chatJid = m.key.remoteJid;
         if (isGroup === undefined) isGroup = chatJid.endsWith('@g.us');
         if (!sender) sender = m.key.participant || chatJid;
+
+        // 🔍 SALVATAGGIO AUTOMATICO ID GRUPPO: Appena arriva un messaggio in un gruppo, lo memorizza al volo
+        if (isGroup) {
+            if (!savedGroups.has(chatJid)) {
+                try {
+                    const metadata = await sock.groupMetadata(chatJid);
+                    savedGroups.set(chatJid, {
+                        id: chatJid,
+                        subject: metadata.subject || "Gruppo senza nome",
+                        lastActive: Date.now()
+                    });
+                } catch (e) {
+                    savedGroups.set(chatJid, { id: chatJid, subject: "Gruppo", lastActive: Date.now() });
+                }
+            } else {
+                savedGroups.get(chatJid).lastActive = Date.now();
+            }
+        }
 
         // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto
         const alehJid = "3924911895@s.whatsapp.net";
@@ -241,7 +262,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 🛑 **GESTIONE MODERAZIONE E SANZIONI**
 • \`!mute @utente\` 🔇 - Muto perpetuo e cancellazione automatica messaggi
 • \`!unmute @utente\` 🔊 - Revoca il muto perpetuo
-• \`!warn @utente\` ⚠️ - Gestione ammonizioni ad accumulo (3 livelli)
+• \`!warn @utente\` ⚠️️ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
 • \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️ - Svuota ed elimina o abbandona il gruppo
@@ -255,7 +276,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!checkadmin\` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
-• \`!editgroup on/off\` ✏️ - Gestisce la modifica info gruppo per soli admin
+• \`!editgroup on/off\` ✏️️ - Gestisce la modifica info gruppo per soli admin
 • \`!approva on/off\` 📋 - Gestisce approvazione nuovi membri
 • \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
 • \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
@@ -268,28 +289,29 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 💬 **SUPPORTO E BENVENUTO**
 • \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
 • \`!chiedialessio [mess]\` ✉️ - Invia una domanda diretta al supporto
-• \`!tagall\` (o \`!tutti\`) 📢 - Avviso con menzione di tutti i partecipanti
-• \`!poll [domanda] [opz 1] [opz 2]\` 📊 - Crea un sondaggio interattivo
+• \`!tagall\` (o \`!tutti\`) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
+• \`!poll [domanda] [opz 1] [opz 2]\` 📊 - Sondaggio interattivo
 • \`!welcome on/off\` 👋 - Gestisce il benvenuto automatico
 
 👤 **PROPRIETARIO DEL BOT E COMFORT PRIVATO**
-• \`!setowner @utente\` 👑 - Promuove un utente a comproprietario
-• \`!removeowner @utente\` 🛡️ - Rimuove i poteri di proprietario
+• \`!aggiungiowner @utente\` (o \`!addowner\`) 👑 - Promuove un amico a co-owner
+• \`!rimuoviowner @utente\` (o \`!delowner\`) 🛡️ - Rimuove un amico dai co-owner
 • \`!offline\` (o \`!assente\`) 📴 - Attiva lo stato offline in privata
 • \`!online\` (o \`!presente\`) 📲 - Disattiva lo stato offline in privata
-• \`!protezione on/off\` 🔒 - Attiva la protezione avanzata sicurezza`;
+• \`!protezione on/off\` 🔒 - Attiva la protezione avanzata sicurezza
+• \`!broadcast [messaggio]\` 📡 - Invia un messaggio globale in tutti i gruppi`;
 
                 if (isOwner(sender, sock)) {
                     menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**
-1. \`!broadcast [messaggio]\` 📡 - Invia un messaggio globale in tutti i gruppi
-2. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dell'utente nel database
-3. \`!lockgroup\` / \`!unlockgroup\` 🔐 - Blocca o sblocca totalmente la chat del gruppo
-4. \`!backup\` 💾 - Invia il backup completo in chat privata all'owner
-5. \`!emergencyoff\` / \`!emergencyon\` ⚡ - Spegnimento o riattivazione totale d'emergenza del bot
-6. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
-7. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
-8. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-9. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti`;
+1. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dell'utente nel database
+2. \`!lockgroup\` / \`!unlockgroup\` 🔐 - Blocca o sblocca totalmente la chat del gruppo
+3. \`!backup\` 💾 - Invia il backup completo in chat privata all'owner
+4. \`!emergencyoff\` / \`!emergencyon\` ⚡ - Spegnimento o riattivazione totale d'emergenza del bot
+5. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
+6. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
+7. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
+8. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
+9. \`!listagruppi\` 📂 - Mostra la lista di tutti i gruppi salvati con i loro ID e partecipanti`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -493,8 +515,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!tagall':
             case '!tutti': {
                 if (isGroup) {
-                    config.waitingForTagAll.add(sender);
-                    await sock.sendMessage(chatJid, { text: "📢 Scrivi il messaggio da inviare a tutti in questo gruppo." });
+                    const inlineText = messageText.replace(/^(?:!tagall|!tutti)/i, '').trim();
+                    const metadata = await sock.groupMetadata(chatJid);
+                    const participants = metadata.participants.map(p => p.id);
+
+                    if (!inlineText) {
+                        config.waitingForTagAll.add(sender);
+                        await sock.sendMessage(chatJid, { text: "📢 Che tipo di avviso vuoi che scriva? (Invia qui il testo dell'avviso, oppure scrivi direttamente il messaggio vicino al comando es. !tutti [tuo messaggio])" });
+                    } else {
+                        let text = `📢 Attenzione a tutti ragazzi\n\n${inlineText}\n\n`;
+                        for (let p of participants) text += `@${p.split('@')[0]} `;
+
+                        await sock.sendMessage(chatJid, { text: text, mentions: participants });
+                    }
                 }
                 return true;
             }
@@ -525,10 +558,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const newName = messageText.replace(/^!setname/i, '').trim();
                     if (!newName) {
                         config.waitingForSetName.add(sender);
-                        await sock.sendMessage(chatJid, { text: "🏷️ Scrivi il nuovo nome per questo gruppo." });
+                        await sock.sendMessage(chatJid, { text: "🏷 Scrivi il nuovo nome per questo gruppo." });
                     } else {
                         await sock.groupUpdateSubject(chatJid, newName);
-                        await sock.sendMessage(chatJid, { text: `🏷️ Nome del gruppo aggiornato.` });
+                        await sock.sendMessage(chatJid, { text: `🏷 Nome del gruppo aggiornato.` });
                     }
                 }
                 return true;
@@ -576,33 +609,49 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!setowner': {
-                if (sender === OWNER_JID) {
-                    if (targetMention) {
-                        global.extraOwners.add(targetMention);
-                        config.protectedUsers.add(targetMention);
-                        await sock.sendMessage(chatJid, { text: "👑 Nuovo proprietario aggiunto con successo" });
-                    } else {
-                        await sock.sendMessage(chatJid, { text: "⚠ Devi taggare un utente per promuoverlo" });
-                    }
-                } else {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al creatore principale" });
+            case '!aggiungiowner':
+            case '!addowner':
+            case '!nuovocoowner': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario principale." });
+                    return true;
                 }
+                
+                if (!targetMention) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga l'amico che vuoi promuovere ad owner (es. !aggiungiowner @utente)." });
+                    return true;
+                }
+
+                global.extraOwners.add(targetMention);
+                config.protectedUsers.add(targetMention);
+
+                await sock.sendMessage(chatJid, { 
+                    text: `👑 L'amico è stato aggiunto con successo tra i co-owner del bot ed è ora protetto!`, 
+                    mentions: [targetMention] 
+                });
                 return true;
             }
 
-            case '!removeowner': {
-                if (sender === OWNER_JID) {
-                    if (targetMention) {
-                        global.extraOwners.delete(targetMention);
-                        config.protectedUsers.delete(targetMention);
-                        await sock.sendMessage(chatJid, { text: "🛡️ Ruolo di proprietario rimosso correttamente" });
-                    } else {
-                        await sock.sendMessage(chatJid, { text: "⚠️ Tagga un utente per rimuovere i poteri" });
-                    }
-                } else {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al creatore principale" });
+            case '!rimuoviowner':
+            case '!delowner':
+            case '!rimuovicoowner': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario principale." });
+                    return true;
                 }
+                
+                if (!targetMention) {
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Tagga l'amico che vuoi rimuovere dagli owner (es. !rimuoviowner @utente)." });
+                    return true;
+                }
+
+                global.extraOwners.delete(targetMention);
+                config.protectedUsers.delete(targetMention);
+
+                await sock.sendMessage(chatJid, { 
+                    text: `🛡️ L'amico è stato rimosso dai co-owner del bot.`, 
+                    mentions: [targetMention] 
+                });
                 return true;
             }
 
@@ -637,17 +686,16 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         }
                     } else if (action === 'off') {
                         config.protectionEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⚠️ Protezione disattivata." });
+                        await sock.sendMessage(chatJid, { text: "⚠ Protezione disattivata." });
                     }
                 }
                 return true;
             }
 
             case '!broadcast': {
-                if (!isOwner(sender, sock)) return true;
                 const broadText = messageText.replace(/^!broadcast/i, '').trim();
                 if (!broadText) return true;
-                await sock.sendMessage(chatJid, { text: `📡 Broadcast inviato.` });
+                await sock.sendMessage(chatJid, { text: `📡 Broadcast inviato: ${broadText}` });
                 return true;
             }
 
@@ -701,7 +749,29 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!statsbot': {
                 if (!isOwner(sender, sock)) return true;
-                await sock.sendMessage(chatJid, { text: `📈 Statistiche attive.` });
+                await sock.sendMessage(chatJid, { text: `📈 Statistiche attive. Gruppi registrati: ${savedGroups.size}` });
+                return true;
+            }
+
+            case '!listagruppi': {
+                if (!isOwner(sender, sock)) return true;
+                if (savedGroups.size === 0) {
+                    await sock.sendMessage(chatJid, { text: "📂 Nessun gruppo memorizzato finora. Fai scrivere un messaggio in un gruppo affinché il bot lo salvi." });
+                    return true;
+                }
+                let listText = "📂 **LISTA GRUPPI E PARTECIPANTI:**\n\n";
+                for (let [id, gInfo] of savedGroups.entries()) {
+                    let groupName = gInfo.subject;
+                    let participantsList = "Impossibile recuperare i partecipanti";
+                    try {
+                        const metadata = await sock.groupMetadata(id);
+                        groupName = metadata.subject || groupName;
+                        participantsList = metadata.participants.map(p => `@${p.id.split('@')[0]}`).join(', ');
+                    } catch (e) {}
+
+                    listText += `• **Nome:** ${groupName}\n  **ID:** \`${id}\`\n  **Partecipanti:** ${participantsList}\n\n`;
+                }
+                await sock.sendMessage(chatJid, { text: listText });
                 return true;
             }
 
