@@ -80,7 +80,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup === undefined) isGroup = chatJid.endsWith('@g.us');
         if (!sender) sender = m.key.participant || chatJid;
 
-        // 🔍 SALVATAGGIO AUTOMATICO ID GRUPPO: Appena arriva un messaggio in un gruppo, lo memorizza al volo
+        // 🔍 SALVATAGGIO AUTOMATICO ID GRUPPO: Appena arriva un messaggio in un gruppo, lo memorizza al volo[cite: 2]
         if (isGroup) {
             if (!savedGroups.has(chatJid)) {
                 try {
@@ -98,14 +98,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto
+        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto[cite: 2]
         const alehJid = "3924911895@s.whatsapp.net";
         if (isGroup) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
                 const isAlehPresent = metadata.participants.some(p => p.id.includes(alehJid.split('@')[0]));
                 if (isAlehPresent) {
-                    return true; // Il bot ignora tutto e non risponde
+                    return true; // Il bot ignora tutto e non risponde[cite: 2]
                 }
             } catch (e) {}
         }
@@ -138,7 +138,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return mentions;
         };
 
-        // 👋 Benvenuto automatico specifico per gruppo
+        // 👋 Benvenuto automatico specifico per gruppo[cite: 2]
         if (isGroup && m.messageStubType === 27 && config.welcomeEnabled) {
             const newMemberJid = m.messageStubParameters?.[0];
             if (newMemberJid) {
@@ -163,7 +163,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
-        // Controllo utenti mutati
+        // Controllo utenti mutati[cite: 2]
         if (isGroup && !m.key.fromMe) {
             const senderClean = sender.split('@')[0];
             if (mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean)) {
@@ -172,7 +172,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // Controllo blocco totale gruppo specifico
+        // Controllo blocco totale gruppo specifico[cite: 2]
         if (isGroup && config.isLocked && !m.key.fromMe) {
             if (await ensureBotIsAdmin(sock, chatJid)) {
                 try {
@@ -193,7 +193,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         const command = args[0].toLowerCase();
         const targetMention = getTargetJid();
 
-        // Controllo se il bot è disattivato solo in questo specifico gruppo
+        // Controllo se il bot è disattivato solo in questo specifico gruppo[cite: 2]
         if (isGroup && config.isInactive) {
             if (command === '!gruppo' && args[1] === 'on' && isOwner(sender, sock)) {
                 config.isInactive = false;
@@ -203,7 +203,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return false;
         }
 
-        // Cooldown specifico per gruppo
+        // Cooldown specifico per gruppo[cite: 2]
         if (config.cooldownEnabled && isGroup && !isOwner(sender, sock)) {
             const now = Date.now();
             const lastTime = cooldowns.get(sender + chatJid) || 0;
@@ -211,7 +211,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             cooldowns.set(sender + chatJid, now);
         }
 
-        // Stati in attesa specifici
+        // Stati in attesa specifici[cite: 2]
         if (config.waitingForTagAll && config.waitingForTagAll.has(sender)) {
             config.waitingForTagAll.delete(sender);
             const announcementText = messageText.trim();
@@ -237,7 +237,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return true;
         }
 
-        // Filtro link specifico per gruppo
+        // Filtro link specifico per gruppo[cite: 2]
         if (isGroup && config.linkFilter && !isOwner(sender, sock)) {
             const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
             if (urlRegex.test(messageText)) {
@@ -247,7 +247,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // Protezione utente nel gruppo
+        // Protezione utente nel gruppo[cite: 2]
         if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
             await sock.sendMessage(chatJid, { text: `🛡 Questo utente è protetto in questo gruppo` });
             return true;
@@ -262,7 +262,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 🛑 **GESTIONE MODERAZIONE E SANZIONI**
 • \`!mute @utente\` 🔇 - Muto perpetuo e cancellazione automatica messaggi
 • \`!unmute @utente\` 🔊 - Revoca il muto perpetuo
-• \`!warn @utente\` ⚠️️ - Gestione ammonizioni ad accumulo (3 livelli)
+• \`!warn @utente\` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
 • \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️ - Svuota ed elimina o abbandona il gruppo
@@ -276,7 +276,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!checkadmin\` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
-• \`!editgroup on/off\` ✏️️ - Gestisce la modifica info gruppo per soli admin
+• \`!editgroup on/off\` ✏ - Gestisce la modifica info gruppo per soli admin
 • \`!approva on/off\` 📋 - Gestisce approvazione nuovi membri
 • \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
 • \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
@@ -284,7 +284,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!setname [nome]\` 🏷 - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
-• \`!cooldown on/off\` ⏱️ - Limite tempo antispam tra comandi
+• \`!cooldown on/off\` ⏱️️ - Limite tempo antispam tra comandi
 
 💬 **SUPPORTO E BENVENUTO**
 • \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
@@ -641,7 +641,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
                 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Tagga l'amico che vuoi rimuovere dagli owner (es. !rimuoviowner @utente)." });
+                    await sock.sendMessage(chatJid, { text: "⚠ Tagga l'amico che vuoi rimuovere dagli owner (es. !rimuoviowner @utente)." });
                     return true;
                 }
 
