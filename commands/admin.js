@@ -6,8 +6,10 @@ const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
 
-// Archivio globale di tutti i gruppi in cui il bot viene rilevato automaticamente
+// Archivi globali per il tracciamento in tempo reale dei messaggi
 const savedGroups = new Map();
+const groupMessages = new Map();     // Traccia i messaggi degli utenti nei gruppi (chatJid -> Map<senderJid, Array>)
+const botSentMessages = new Map();   // Traccia i messaggi inviati dal bot (chatJid -> Array)
 
 // Gestione delle configurazioni specifiche per ogni singolo gruppo (chatJid -> impostazioni)
 const groupsConfig = new Map();
@@ -66,6 +68,34 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
             } else {
                 savedGroups.get(chatJid).lastActive = Date.now();
+            }
+        }
+
+        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEGLI UTENTI (per !clearsender)
+        if (isGroup && chatJid && sender && m.key && m.key.id) {
+            if (!groupMessages.has(chatJid)) groupMessages.set(chatJid, new Map());
+            let chatMap = groupMessages.get(chatJid);
+            if (!chatMap.has(sender)) chatMap.set(sender, []);
+            
+            let userMsgs = chatMap.get(sender);
+            userMsgs.push({
+                id: m.key.id,
+                key: m.key
+            });
+            if (userMsgs.length > 250) userMsgs.shift();
+        }
+
+        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEL BOT (per !clearmetutto)
+        if (chatJid && m.key && m.key.fromMe && m.key.id) {
+            if (!botSentMessages.has(chatJid)) botSentMessages.set(chatJid, []);
+            let botList = botSentMessages.get(chatJid);
+            // Evita duplicati
+            if (!botList.some(item => item.id === m.key.id)) {
+                botList.push({
+                    id: m.key.id,
+                    key: m.key
+                });
+                if (botList.length > 300) botList.shift();
             }
         }
 
@@ -217,7 +247,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
+        if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote', '!clearsender', '!cleardue'].includes(command)) {
             await sock.sendMessage(chatJid, { text: `🛡 Questo utente è protetto in questo gruppo` });
             return true;
         }
@@ -236,8 +266,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
 • \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️ - Svuota ed elimina o abbandona il gruppo
 • \`!clearalltesto [parola]\` 🔍 - Elimina per tutti i messaggi con la parola indicata
+• \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
-🛡️ **GESTIONE AMMINISTRATORI**
+⚙️ **GESTIONE AMMINISTRATORI**
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
 • \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
 • \`!multidemote @u1 @u2...\` 👥 - Rimuove i poteri di admin a più utenti insieme
@@ -261,16 +292,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!chiedialessio [mess]\` ✉️ - Invia una domanda diretta al supporto
 • \`!tagall\` (o \`!tutti\`) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
 • \`!poll [domanda] [opz 1] [opz 2]\` 📊 - Sondaggio interattivo
-• \`!welcome on/off\` 👋 - Gestisce il benvenuto automatico
-• \`!ripeti [messaggio] [numero]\` 🔁 - Ripete un messaggio più volte con etichetta progressiva
-
-👤 **PROPRIETARIO DEL BOT E COMFORT PRIVATO**
-• \`!aggiungiowner @utente\` (o \`!addowner\`) 👑 - Promuove un amico a co-owner
-• \`!rimuoviowner @utente\` (o \`!delowner\`) 🛡️ - Rimuove un amico dai co-owner
-• \`!offline\` (o \`!assente\`) 📴 - Attiva lo stato offline in privata
-• \`!online\` (o \`!presente\`) 📲 - Disattiva lo stato offline in privata
-• \`!protezione on/off\` 🔒 - Attiva la protezione avanzata sicurezza
-• \`!broadcast [messaggio]\` 📡 - Invia un messaggio globale in tutti i gruppi`;
+• \`!welcome on/off 👋\` - Gestisce il benvenuto automatico
+• \`!ripeti [messaggio] [numero]\` (o \`!flood\`) 🔁 - Ripete un messaggio più volte con etichetta progressiva
+• \`!clearmetutto\` (o \`!botclean\`) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
 
                 if (isOwner(sender, sock)) {
                     menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**
@@ -318,6 +342,94 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     await sock.sendMessage(chatJid, { text: finalMessage });
                     await new Promise(resolve => setTimeout(resolve, 800));
                 }
+                return true;
+            }
+
+            case '!clearsender':
+            case '!cleardue': {
+                if (!isGroup) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando può essere usato solo nei gruppi." });
+                    return true;
+                }
+
+                if (!targetMention) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: `!clearsender @utente`" });
+                    return true;
+                }
+
+                // Verifica se il bot è admin
+                try {
+                    const metadata = await sock.groupMetadata(chatJid);
+                    const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                    const botParticipant = metadata.participants.find(p => p.id === botId || p.id.includes(sock.user.id.split(':')[0]));
+                    const isBotAdmin = botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
+
+                    if (!isBotAdmin) {
+                        await sock.sendMessage(chatJid, { text: "❌ Per cancellare i messaggi degli altri, il bot deve essere **amministratore** del gruppo." });
+                        return true;
+                    }
+                } catch (e) {}
+
+                const chatMap = groupMessages.get(chatJid);
+                if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Non ho trovato messaggi recenti salvati per questo utente in questa sessione.", mentions: [targetMention] });
+                    return true;
+                }
+
+                const userMsgs = chatMap.get(targetMention);
+                const totalToDel = userMsgs.length;
+
+                await sock.sendMessage(chatJid, { text: `🧹 Avvio cancellazione di ${totalToDel} messaggi per l'utente...`, mentions: [targetMention] });
+
+                let deletedCount = 0;
+                for (let msgObj of userMsgs) {
+                    try {
+                        await sock.sendMessage(chatJid, { 
+                            delete: { 
+                                remoteJid: chatJid, 
+                                fromMe: false, 
+                                id: msgObj.id, 
+                                participant: targetMention 
+                            } 
+                        });
+                        deletedCount++;
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } catch (err) {}
+                }
+
+                chatMap.set(targetMention, []);
+                await sock.sendMessage(chatJid, { text: `✅ Operazione completata: eliminati circa ${deletedCount} messaggi dell'utente.`, mentions: [targetMention] });
+                return true;
+            }
+
+            case '!clearmetutto':
+            case '!botclean': {
+                const botList = botSentMessages.get(chatJid);
+                if (!botList || botList.length === 0) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi inviati da me memorizzati in questa chat." });
+                    return true;
+                }
+
+                const totalBotMsgs = botList.length;
+                await sock.sendMessage(chatJid, { text: `🧹 Avvio rimozione di tutti i miei ${totalBotMsgs} messaggi inviati in questa chat...` });
+
+                let removedCount = 0;
+                for (let msgObj of botList) {
+                    try {
+                        await sock.sendMessage(chatJid, { 
+                            delete: { 
+                                remoteJid: chatJid, 
+                                fromMe: true, 
+                                id: msgObj.id 
+                            } 
+                        });
+                        removedCount++;
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } catch (e) {}
+                }
+
+                botSentMessages.set(chatJid, []);
+                await sock.sendMessage(chatJid, { text: `✅ Operazione completata: ho eliminato ${removedCount} messaggi miei.` });
                 return true;
             }
 
