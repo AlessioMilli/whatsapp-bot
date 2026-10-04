@@ -262,6 +262,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!tagall\` (o \`!tutti\`) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
 • \`!poll [domanda] [opz 1] [opz 2]\` 📊 - Sondaggio interattivo
 • \`!welcome on/off\` 👋 - Gestisce il benvenuto automatico
+• \`!ripeti [messaggio] [numero]\` 🔁 - Ripete un messaggio più volte con etichetta progressiva
 
 👤 **PROPRIETARIO DEL BOT E COMFORT PRIVATO**
 • \`!aggiungiowner @utente\` (o \`!addowner\`) 👑 - Promuove un amico a co-owner
@@ -284,6 +285,39 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
+                return true;
+            }
+
+            case '!ripeti':
+            case '!flood': {
+                if (!isGroup) return true;
+                
+                const inputArgs = messageText.replace(/^(?:!ripeti|!flood)/i, '').trim().split(/\s+/);
+                
+                if (inputArgs.length < 2) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Uso corretto: `!ripeti [il tuo messaggio] [numero di volte]`\nEsempio: `!ripeti Ciao a tutti 5`" });
+                    return true;
+                }
+
+                const countStr = inputArgs[inputArgs.length - 1];
+                const count = parseInt(countStr, 10);
+
+                if (isNaN(count) || count <= 0 || count > 20) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido alla fine (massimo 20 volte per evitare il blocco dello spam)." });
+                    return true;
+                }
+
+                const textToRepeat = inputArgs.slice(0, inputArgs.length - 1).join(' ');
+
+                await sock.sendMessage(chatJid, { text: `🚀 Avvio invio: ripeterò il messaggio "${textToRepeat}" per ${count} volte.` });
+
+                for (let i = 1; i <= count; i++) {
+                    const customCommandTag = `!loop_${i}`;
+                    const finalMessage = `${textToRepeat} (${customCommandTag} - ${i}/${count})`;
+                    
+                    await sock.sendMessage(chatJid, { text: finalMessage });
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
                 return true;
             }
 
