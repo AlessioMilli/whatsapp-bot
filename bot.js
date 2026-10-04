@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 import { execute as adminExecute } from './commands/admin.js';
 
 // --- GESTIONE LETTURA CONFIG.JSON ---
@@ -25,12 +25,51 @@ function loadConfig() {
 const savedConfig = loadConfig();
 global.geminiApiKey = savedConfig.geminiApiKey || "";
 
-// 1. Configurazione Server Express per UptimeRobot (24/7)
+// 1. Configurazione Server Express per UptimeRobot e Pagina QR
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Variabile globale per memorizzare l'ultimo QR code attivo
+let latestQR = "";
+
 app.get('/', (req, res) => {
     res.status(200).send('Bot attivo e online!');
+});
+
+// Pagina web dedicata per scansionare il QR Code comodamente
+app.get('/qr', async (req, res) => {
+    if (!latestQR) {
+        return res.send(`
+            <html>
+                <body style="font-family: Arial; text-align: center; margin-top: 50px; background: #121212; color: white;">
+                    <h2>⏳ Nessun QR Code generato al momento o bot già connesso!</h2>
+                    <p>Ricarica la pagina tra qualche secondo o riavvia il servizio se necessario.</p>
+                </body>
+            </html>
+        `);
+    }
+
+    try {
+        const qrImage = await QRCode.toDataURL(latestQR);
+        res.send(`
+            <html>
+                <head>
+                    <title>QR Code WhatsApp Bot</title>
+                    <meta http-equiv="refresh" content="20">
+                </head>
+                <body style="font-family: Arial; text-align: center; margin-top: 40px; background: #121212; color: white;">
+                    <h2>📱 Scansiona questo QR Code con WhatsApp</h2>
+                    <p>Vai su <b>Impostazioni > Dispositivi collegati > Collega un dispositivo</b></p>
+                    <div style="margin: 20px; background: white; display: inline-block; padding: 20px; border-radius: 10px;">
+                        <img src="${qrImage}" alt="QR Code WhatsApp" style="width: 300px; height: 300px;" />
+                    </div>
+                    <p style="font-size: 12px; color: gray;">La pagina si aggiorna automaticamente per sicurezza.</p>
+                </body>
+            </html>
+        `);
+    } catch (err) {
+        res.status(500).send("Errore nella generazione grafica del QR code.");
+    }
 });
 
 app.listen(PORT, () => {
@@ -45,19 +84,22 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false // Gestiamo la generazione manualmente con qrcode-terminal
+        printQRInTerminal: false
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Gestione della connessione e del QR Code
+    // Gestione della connessione e del QR Code tramite link web
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Se viene generato un QR code, stampalo a terminale
         if (qr) {
-            console.log("\n📲 Scansiona questo QR code con WhatsApp nella sezione 'Dispositivi collegati':\n");
-            qrcode.generate(qr, { small: true });
+            latestQR = qr;
+            const appUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+            console.log(`\n========================================`);
+            console.log(`🔗 APRI QUESTO LINK PER IL QR CODE:`);
+            console.log(`${appUrl}/qr`);
+            console.log(`========================================\n`);
         }
 
         if (connection === 'close') {
@@ -70,6 +112,7 @@ async function startBot() {
             }
         } else if (connection === 'open') {
             console.log('✅ Bot connesso e operativo con successo tramite QR Code!');
+            latestQR = ""; // Pulisce il QR code una volta connesso con successo
         }
     });
 
