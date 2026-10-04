@@ -44,36 +44,6 @@ const isProtected = (jid, config) => {
     return jid === OWNER_JID || config.protectedUsers.has(jid);
 };
 
-// Funzione modificata: se sei l'owner, considera sempre valido il permesso di admin
-async function checkGroupAdminPrivileges(sock, chatJid, sender) {
-    if (isOwner(sender, sock)) return true;
-    try {
-        const metadata = await sock.groupMetadata(chatJid);
-        const senderJid = sender.split(':')[0] + '@s.whatsapp.net';
-        
-        const participant = metadata.participants.find(p => {
-            const pIdClean = p.id.split(':')[0].split('@')[0];
-            const senderClean = senderJid.split(':')[0].split('@')[0];
-            return pIdClean === senderClean;
-        });
-
-        return participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
-    } catch (e) {
-        return false;
-    }
-}
-
-async function ensureBotIsAdmin(sock, chatJid) {
-    try {
-        const metadata = await sock.groupMetadata(chatJid);
-        const cleanOwnerJid = OWNER_JID.split(':')[0].split('@')[0];
-        const botParticipant = metadata.participants.find(p => p.id.includes(cleanOwnerJid));
-        return botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
-    } catch (e) {
-        return false;
-    }
-}
-
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
     try {
         if (!chatJid) chatJid = m.key.remoteJid;
@@ -172,15 +142,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         if (isGroup && config.isLocked && !m.key.fromMe) {
-            if (await ensureBotIsAdmin(sock, chatJid)) {
+            if (!isOwner(sender, sock)) {
                 try {
-                    const metadata = await sock.groupMetadata(chatJid);
-                    const participant = metadata.participants.find(p => p.id === sender);
-                    const isAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
-                    if (!isAdmin && !isOwner(sender, sock)) {
-                        await sock.sendMessage(chatJid, { delete: m.key });
-                        return true;
-                    }
+                    await sock.sendMessage(chatJid, { delete: m.key });
+                    return true;
                 } catch (e) {}
             }
         }
@@ -224,10 +189,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             config.waitingForSetName.delete(sender);
             const newTitle = messageText.trim();
             if (newTitle && isGroup) {
-                if (await checkGroupAdminPrivileges(sock, chatJid, sender)) {
-                    await sock.groupUpdateSubject(chatJid, newTitle);
-                    await sock.sendMessage(chatJid, { text: `🏷 Il nome del gruppo è stato aggiornato in modo perfetto` });
-                }
+                await sock.groupUpdateSubject(chatJid, newTitle);
+                await sock.sendMessage(chatJid, { text: `🏷 Il nome del gruppo è stato aggiornato in modo perfetto` });
             }
             return true;
         }
@@ -236,7 +199,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
             if (urlRegex.test(messageText)) {
                 await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
-                await sock.sendMessage(chatJid, { text: `⚠️ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` });
+                await sock.sendMessage(chatJid, { text: `⚠️️ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` });
                 return true;
             }
         }
@@ -269,7 +232,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
 • \`!checkadmin\` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
 • \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
-• \`!editgroup on/off\` ✏ - Gestisce la modifica info gruppo per soli admin
+• \`!editgroup on/off\` ✏ - Gestisce la modifica info gruppo
 • \`!approva on/off\` 📋 - Gestisce approvazione nuovi membri
 • \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
 • \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
@@ -312,10 +275,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!mute': {
-                if (isGroup && !(await checkGroupAdminPrivileges(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non hai i privilegi di Amministratore qui." });
-                    return true;
-                }
                 if (!targetMention) return true;
                 mutedUsers.add(targetMention);
                 if (!config.stealthMode) {
@@ -325,7 +284,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!unmute': {
-                if (isGroup && !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
                 if (!targetMention) return true;
                 const targetClean = targetMention.split('@')[0];
                 for (let u of mutedUsers) {
@@ -339,7 +297,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!warn':
             case '!wuarn': {
-                if (isGroup && !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
                 if (!targetMention) return true;
                 const currentWarns = (warnings.get(targetMention + chatJid) || 0) + 1;
                 warnings.set(targetMention + chatJid, currentWarns);
@@ -361,7 +318,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!rimuovi':
             case '!kick': {
                 if (!isGroup || !targetMention) return true;
-                if (!(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
                 if (!config.stealthMode) {
                     await sock.sendMessage(chatJid, { text: `Utente rimosso da questo gruppo con successo.`, mentions: [targetMention] });
@@ -371,7 +327,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!masskick':
             case '!svuotagruppo': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const metadata = await sock.groupMetadata(chatJid);
                 const participants = metadata.participants.filter(p => !p.admin && !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
@@ -383,7 +339,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!deletegroup':
             case '!eliminagruppo': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const metadata = await sock.groupMetadata(chatJid);
                 const participants = metadata.participants.filter(p => !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
@@ -394,7 +350,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!clearalltesto': {
-                if (!isOwner(sender, sock) && !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
                 const keyword = messageText.replace(/^!clearalltesto/i, '').trim();
                 if (!keyword) return true;
                 if (!config.stealthMode) {
@@ -404,7 +359,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!promuovi': {
-                if (!isGroup || !targetMention || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "promote");
                 if (!config.stealthMode) {
                     await sock.sendMessage(chatJid, { text: `Utente promosso ad admin in questo gruppo.`, mentions: [targetMention] });
@@ -414,7 +369,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!demuovi':
             case '!quickdemote': {
-                if (!isGroup || !targetMention || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "demote");
                 if (!config.stealthMode) {
                     await sock.sendMessage(chatJid, { text: `Poteri revocati in questo gruppo.`, mentions: [targetMention] });
@@ -423,7 +378,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!multidemote': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const targets = getAllMentionedJids();
                 if (targets.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, targets, "demote");
@@ -434,16 +389,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!checkadmin': {
                 if (!isGroup) return true;
-                if (isOwner(sender, sock) || (await checkGroupAdminPrivileges(sock, chatJid, sender))) {
-                    await sock.sendMessage(chatJid, { text: "Verifica OK: sei Amministratore (o Owner) in questo gruppo." });
-                } else {
-                    await sock.sendMessage(chatJid, { text: "Non risulti Amministratore in questo gruppo specifico." });
-                }
+                await sock.sendMessage(chatJid, { text: "Verifica completata: i comandi di moderazione sono liberi per tutti in questo gruppo." });
                 return true;
             }
 
             case '!editgroup': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const mode = args[1];
                 if (mode === 'on') {
                     await sock.groupSettingUpdate(chatJid, 'locked');
@@ -456,7 +407,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!approva': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupJoinApprovalMode(chatJid, mode).catch(() => {});
@@ -466,7 +417,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!addmember': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupAddMode(chatJid, mode === 'on' ? 'admin_add' : 'all_member_add').catch(() => {});
@@ -476,7 +427,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!history': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupMemberAddMode(chatJid, mode === 'on' ? 'prompt' : 'no_prompt').catch(() => {});
@@ -486,7 +437,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!invitelink': {
-                if (!isGroup || !(await checkGroupAdminPrivileges(sock, chatJid, sender))) return true;
+                if (!isGroup) return true;
                 await sock.sendMessage(chatJid, { text: `🔗 Link d'invito aggiornato per questo gruppo.` });
                 return true;
             }
@@ -542,7 +493,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!setname': {
-                if (isGroup && (await checkGroupAdminPrivileges(sock, chatJid, sender))) {
+                if (isGroup) {
                     const newName = messageText.replace(/^!setname/i, '').trim();
                     if (!newName) {
                         config.waitingForSetName.add(sender);
@@ -556,7 +507,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!lockinfo': {
-                if (isGroup && (await checkGroupAdminPrivileges(sock, chatJid, sender))) {
+                if (isGroup) {
                     await sock.groupSettingUpdate(chatJid, 'locked');
                     await sock.sendMessage(chatJid, { text: "🔒 Info bloccate per questo gruppo." });
                 }
@@ -564,7 +515,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!unlockinfo': {
-                if (isGroup && (await checkGroupAdminPrivileges(sock, chatJid, sender))) {
+                if (isGroup) {
                     await sock.groupSettingUpdate(chatJid, 'unlocked');
                     await sock.sendMessage(chatJid, { text: "🔓 Info sbloccate per questo gruppo." });
                 }
@@ -695,7 +646,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!lockgroup': {
-                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid, sender)))) {
+                if (isOwner(sender, sock)) {
                     if (isGroup) {
                         config.isLocked = true;
                         await sock.sendMessage(chatJid, { text: "🔐 Questo gruppo è ora bloccato: solo gli admin possono scrivere." });
@@ -705,7 +656,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!unlockgroup': {
-                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid, sender)))) {
+                if (isOwner(sender, sock)) {
                     if (isGroup) {
                         config.isLocked = false;
                         await sock.sendMessage(chatJid, { text: "🔓 Questo gruppo è ora sbloccato per tutti." });
@@ -764,7 +715,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!stealth': {
-                if (isOwner(sender, sock) || (isGroup && (await checkGroupAdminPrivileges(sock, chatJid, sender)))) {
+                if (isOwner(sender, sock)) {
                     if (args[1] === 'on') {
                         config.stealthMode = true;
                         await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth attivata solo per questo gruppo." });
