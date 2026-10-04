@@ -199,7 +199,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
             if (urlRegex.test(messageText)) {
                 await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
-                await sock.sendMessage(chatJid, { text: `⚠️️ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` });
+                await sock.sendMessage(chatJid, { text: `⚠ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` });
                 return true;
             }
         }
@@ -718,10 +718,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isOwner(sender, sock)) {
                     if (args[1] === 'on') {
                         config.stealthMode = true;
-                        await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth attivata solo per questo gruppo." });
+                        // Invia conferma in privato all'owner
+                        await sock.sendMessage(OWNER_JID, { text: "🥷 Modalità stealth attivata con successo in questo gruppo." }).catch(() => {});
                     } else if (args[1] === 'off') {
                         config.stealthMode = false;
-                        await sock.sendMessage(chatJid, { text: "🥷 Modalità stealth disattivata in questo gruppo." });
+                        // Invia conferma in privato all'owner
+                        await sock.sendMessage(OWNER_JID, { text: "🥷 Modalità stealth disattivata in questo gruppo." }).catch(() => {});
                     }
                 }
                 return true;
