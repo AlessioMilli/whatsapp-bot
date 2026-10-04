@@ -204,7 +204,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!wuarn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
+        if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote'].includes(command)) {
             await sock.sendMessage(chatJid, { text: `🛡 Questo utente è protetto in questo gruppo` });
             return true;
         }
@@ -295,9 +295,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!warn':
-            case '!wuarn': {
+            case '!warn': {
                 if (!targetMention) return true;
+
+                // Controllo di sicurezza: se l'utente bersaglio è il proprietario o un owner protetto
+                if (isProtected(targetMention, config)) {
+                    await sock.sendMessage(chatJid, { 
+                        text: `Non puoi ammonire l'owner o un utente protetto! 🛡️`, 
+                        mentions: [targetMention] 
+                    });
+                    return true;
+                }
+
                 const currentWarns = (warnings.get(targetMention + chatJid) || 0) + 1;
                 warnings.set(targetMention + chatJid, currentWarns);
 
@@ -718,11 +727,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isOwner(sender, sock)) {
                     if (args[1] === 'on') {
                         config.stealthMode = true;
-                        // Invia conferma in privato all'owner
                         await sock.sendMessage(OWNER_JID, { text: "🥷 Modalità stealth attivata con successo in questo gruppo." }).catch(() => {});
                     } else if (args[1] === 'off') {
                         config.stealthMode = false;
-                        // Invia conferma in privato all'owner
                         await sock.sendMessage(OWNER_JID, { text: "🥷 Modalità stealth disattivata in questo gruppo." }).catch(() => {});
                     }
                 }
