@@ -22,7 +22,6 @@ function getGroupConfig(chatJid) {
             waitingForSetName: new Set(),
             isInactive: false,
             isLocked: false,
-            stealthMode: false,
             welcomeEnabled: true,
             protectionEnabled: true,
             offlineMode: false,
@@ -265,10 +264,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 3. \`!backup\` 💾 - Invia il backup completo in chat privata all'owner
 4. \`!emergencyoff\` / \`!emergencyon\` ⚡ - Spegnimento o riattivazione totale d'emergenza del bot
 5. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
-6. \`!stealth on/off\` 🥷 - Esegue comandi di moderazione in background in modo silenzioso
-7. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-8. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
-9. \`!listagruppi\` 📂 - Mostra la lista di tutti i gruppi salvati con i loro ID e partecipanti`;
+6. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
+7. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
+8. \`!listagruppi\` 📂 - Mostra la lista di tutti i gruppi salvati con i loro ID e partecipanti`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -278,9 +276,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!mute': {
                 if (!targetMention) return true;
                 mutedUsers.add(targetMention);
-                if (!config.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `🔇 L'utente è stato mutato in questo gruppo.`, mentions: [targetMention] });
-                }
+                await sock.sendMessage(chatJid, { text: `🔇 L'utente è stato mutato in questo gruppo.`, mentions: [targetMention] });
                 return true;
             }
 
@@ -290,16 +286,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 for (let u of mutedUsers) {
                     if (u === targetMention || u.split('@')[0] === targetClean) mutedUsers.delete(u);
                 }
-                if (!config.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `🔊 L'utente può tornare a scrivere in questo gruppo.`, mentions: [targetMention] });
-                }
+                await sock.sendMessage(chatJid, { text: `🔊 L'utente può tornare a scrivere in questo gruppo.`, mentions: [targetMention] });
                 return true;
             }
 
             case '!warn': {
                 if (!targetMention) return true;
 
-                // Controllo di sicurezza rigoroso: blocca all'istante se il bersaglio è protetto o owner
                 if (isProtected(targetMention, config)) {
                     await sock.sendMessage(chatJid, { 
                         text: `Non puoi ammonire l'owner o un utente protetto! 🛡️`, 
@@ -312,15 +305,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 warnings.set(targetMention + chatJid, currentWarns);
 
                 if (currentWarns < 3) {
-                    if (!config.stealthMode) {
-                        await sock.sendMessage(chatJid, { text: `⚠️ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
-                    }
+                    await sock.sendMessage(chatJid, { text: `⚠️ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
                 } else {
                     warnings.delete(targetMention + chatJid);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                    if (!config.stealthMode) {
-                        await sock.sendMessage(chatJid, { text: `🚨 3 avvertimenti superati: utente espulso da questo gruppo.`, mentions: [targetMention] });
-                    }
+                    await sock.sendMessage(chatJid, { text: `🚨 3 avvertimenti superati: utente espulso da questo gruppo.`, mentions: [targetMention] });
                 }
                 return true;
             }
@@ -329,9 +318,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!kick': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                if (!config.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `Utente rimosso da questo gruppo con successo.`, mentions: [targetMention] });
-                }
+                await sock.sendMessage(chatJid, { text: `Utente rimosso da questo gruppo con successo.`, mentions: [targetMention] });
                 return true;
             }
 
@@ -342,7 +329,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const participants = metadata.participants.filter(p => !p.admin && !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participants, "remove");
-                    if (!config.stealthMode) await sock.sendMessage(chatJid, { text: "🧹 Membri non admin rimossi da questo gruppo" });
+                    await sock.sendMessage(chatJid, { text: "🧹 Membri non admin rimossi da questo gruppo" });
                 }
                 return true;
             }
@@ -362,18 +349,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!clearalltesto': {
                 const keyword = messageText.replace(/^!clearalltesto/i, '').trim();
                 if (!keyword) return true;
-                if (!config.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `🔍 Scansione avviata in questo gruppo per: ${keyword}` });
-                }
+                await sock.sendMessage(chatJid, { text: `🔍 Scansione avviata in questo gruppo per: ${keyword}` });
                 return true;
             }
 
             case '!promuovi': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "promote");
-                if (!config.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `Utente promosso ad admin in questo gruppo.`, mentions: [targetMention] });
-                }
+                await sock.sendMessage(chatJid, { text: `Utente promosso ad admin in questo gruppo.`, mentions: [targetMention] });
                 return true;
             }
 
@@ -381,9 +364,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!quickdemote': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "demote");
-                if (!config.stealthMode) {
-                    await sock.sendMessage(chatJid, { text: `Poteri revocati in questo gruppo.`, mentions: [targetMention] });
-                }
+                await sock.sendMessage(chatJid, { text: `Poteri revocati in questo gruppo.`, mentions: [targetMention] });
                 return true;
             }
 
@@ -392,7 +373,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const targets = getAllMentionedJids();
                 if (targets.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, targets, "demote");
-                    if (!config.stealthMode) await sock.sendMessage(chatJid, { text: `Admin multipli rimossi in questo gruppo.` });
+                    await sock.sendMessage(chatJid, { text: `Admin multipli rimossi in questo gruppo.` });
                 }
                 return true;
             }
@@ -721,19 +702,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     listText += `• **Nome:** ${groupName}\n  **ID:** \`${id}\`\n  **Partecipanti:** ${participantsList}\n\n`;
                 }
                 await sock.sendMessage(chatJid, { text: listText });
-                return true;
-            }
-
-            case '!stealth': {
-                if (isOwner(sender, sock)) {
-                    if (args[1] === 'on') {
-                        config.stealthMode = true;
-                        await sock.sendMessage(OWNER_JID, { text: "🥷 Modalità stealth attivata con successo in questo gruppo." }).catch(() => {});
-                    } else if (args[1] === 'off') {
-                        config.stealthMode = false;
-                        await sock.sendMessage(OWNER_JID, { text: "🥷 Modalità stealth disattivata in questo gruppo." }).catch(() => {});
-                    }
-                }
                 return true;
             }
 
