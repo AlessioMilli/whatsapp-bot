@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode-terminal';
 import { execute as adminExecute } from './commands/admin.js';
 
 // --- GESTIONE LETTURA CONFIG.JSON ---
@@ -39,37 +40,25 @@ app.listen(PORT, () => {
 const userCooldowns = new Map();
 const COOLDOWN_TIME = 5000;
 
-// INSERISCI QUI IL TUO NUMERO DI TELEFONO CON IL PREFISSO (es. 393534467571)
-const PHONE_NUMBER = "393534467571"; 
-
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false
+        printQRInTerminal: false // Gestiamo la generazione manualmente con qrcode-terminal
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Se non è registrato, genera il codice di accoppiamento
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                let phoneNumber = PHONE_NUMBER.replace(/[^0-9]/g, '');
-                let code = await sock.requestPairingCode(phoneNumber);
-                console.log(`\n========================================`);
-                console.log(`🔥 IL TUO CODICE DI ACCOPPIAMENTO È: ${code}`);
-                console.log(`========================================\n`);
-            } catch (err) {
-                console.error("Errore nella generazione del codice di accoppiamento:", err);
-            }
-        }, 3000);
-    }
-
-    // Gestione della connessione
+    // Gestione della connessione e del QR Code
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
+
+        // Se viene generato un QR code, stampalo a terminale
+        if (qr) {
+            console.log("\n📲 Scansiona questo QR code con WhatsApp nella sezione 'Dispositivi collegati':\n");
+            qrcode.generate(qr, { small: true });
+        }
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output?.statusCode : lastDisconnect?.error?.output?.statusCode;
@@ -80,7 +69,7 @@ async function startBot() {
                 startBot();
             }
         } else if (connection === 'open') {
-            console.log('✅ Bot connesso e operativo con successo!');
+            console.log('✅ Bot connesso e operativo con successo tramite QR Code!');
         }
     });
 
