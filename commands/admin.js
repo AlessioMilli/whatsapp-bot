@@ -16,6 +16,7 @@ function getGroupConfig(chatJid) {
     if (!groupsConfig.has(chatJid)) {
         groupsConfig.set(chatJid, {
             linkFilter: false,
+            photoFilter: false,
             cooldownEnabled: false,
             cooldownTime: 4000,
             waitingForTagAll: new Set(),
@@ -133,6 +134,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
+        // 📸 CONTROLLO ANTIPHOTO: Cancella le foto se il filtro è attivo e non è un admin/owner
+        if (isGroup && config.photoFilter && m.message?.imageMessage && !isOwner(sender, sock)) {
+            try {
+                await sock.sendMessage(chatJid, { delete: m.key });
+                await sock.sendMessage(chatJid, { 
+                    text: `⚠️ @${sender.split('@')[0]}, non puoi inviare foto senza autorizzazione! Il messaggio è stato rimosso automaticamente per tutelare la privacy.`, 
+                    mentions: [sender] 
+                });
+                return true;
+            } catch (err) {}
+        }
+
         if (isGroup && !m.key.fromMe) {
             const senderClean = sender.split('@')[0];
             if (mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean)) {
@@ -240,6 +253,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!setname [nome]\` 🏷 - Cambia istantaneamente il nome del gruppo
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
+• \`!antiphoto on/off\` 📸 - Blocco automatico foto non autorizzate
 • \`!cooldown on/off\` ⏱ - Limite tempo antispam tra comandi
 
 💬 **SUPPORTO E BENVENUTO**
@@ -521,6 +535,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     } else if (args[1] === 'off') {
                         config.linkFilter = false;
                         await sock.sendMessage(chatJid, { text: "🌐 Filtro link disattivato in questo gruppo." });
+                    }
+                }
+                return true;
+            }
+
+            case '!antiphoto': {
+                if (isGroup) {
+                    if (args[1] === 'on') {
+                        config.photoFilter = true;
+                        await sock.sendMessage(chatJid, { text: "📸 Protezione anti-foto non autorizzate attivata in questo gruppo." });
+                    } else if (args[1] === 'off') {
+                        config.photoFilter = false;
+                        await sock.sendMessage(chatJid, { text: "📸 Protezione anti-foto disattivata in questo gruppo." });
                     }
                 }
                 return true;
