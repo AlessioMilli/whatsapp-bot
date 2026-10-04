@@ -26,7 +26,8 @@ function getGroupConfig(chatJid) {
             welcomeEnabled: true,
             protectionEnabled: true,
             offlineMode: false,
-            protectedUsers: new Set()
+            protectedUsers: new Set(),
+            antiGroupIconUsers: new Set() // 🛡️ Utenti bloccati dal cambiare l'icona del gruppo
         });
     }
     return groupsConfig.get(chatJid);
@@ -125,6 +126,27 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 } catch (err) {}
             }
             return true;
+        }
+
+        // 🖼️ CONTROLLO ANTIFOTO PROFILO GRUPPO (Stub type 28: icona cambiata, 29: icona rimossa)
+        if (isGroup && (m.messageStubType === 28 || m.messageStubType === 29)) {
+            const iconChanger = sender;
+            if (config.antiGroupIconUsers.has(iconChanger) && !isOwner(iconChanger, sock)) {
+                try {
+                    // Rimuove l'immagine impostando un'immagine vuota o rimuovendola tramite remove icon
+                    await sock.removeProfilePicture(chatJid);
+                    await sock.sendMessage(chatJid, { 
+                        text: `⚠️ @${iconChanger.split('@')[0]}, non hai l'autorizzazione per modificare o inserire la foto profilo di questo gruppo! L'immagine è stata rimossa dal bot.`, 
+                        mentions: [iconChanger] 
+                    });
+                } catch (err) {
+                    try {
+                        // Metodo alternativo di fallback se removeProfilePicture non è direttamente agganciato
+                        await sock.sendMessage(chatJid, { text: `⚠️ @${iconChanger.split('@')[0]}, non puoi cambiare la foto del gruppo!`, mentions: [iconChanger] });
+                    } catch (e) {}
+                }
+                return true;
+            }
         }
 
         if (!messageText) {
@@ -254,6 +276,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
 • \`!antiphoto on/off\` 📸 - Blocco automatico foto non autorizzate
+• \`!antigp @utente\` 🖼️ - Impedisce all'utente di mettere/cambiare la foto profilo gruppo
+• \`!remantigp @utente\` 🔓 - Rimuove il blocco foto profilo all'utente
 • \`!cooldown on/off\` ⏱ - Limite tempo antispam tra comandi
 
 💬 **SUPPORTO E BENVENUTO**
@@ -319,7 +343,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 warnings.set(targetMention + chatJid, currentWarns);
 
                 if (currentWarns < 3) {
-                    await sock.sendMessage(chatJid, { text: `⚠️ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
+                    await sock.sendMessage(chatJid, { text: `⚠️️ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
                 } else {
                     warnings.delete(targetMention + chatJid);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
@@ -553,6 +577,30 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
+            case '!antigp':
+            case '!antigroupicon': {
+                if (isGroup && targetMention) {
+                    config.antiGroupIconUsers.add(targetMention);
+                    await sock.sendMessage(chatJid, { 
+                        text: `🖼️ Blocco foto profilo attivato per l'utente: se proverà a cambiare o mettere un'immagine al gruppo, gliela rimuoverò subito.`, 
+                        mentions: [targetMention] 
+                    });
+                }
+                return true;
+            }
+
+            case '!remantigp':
+            case '!remantigroupicon': {
+                if (isGroup && targetMention) {
+                    config.antiGroupIconUsers.delete(targetMention);
+                    await sock.sendMessage(chatJid, { 
+                        text: `🔓 Blocco foto profilo rimosso per l'utente. Adesso può cambiare l'immagine del gruppo.`, 
+                        mentions: [targetMention] 
+                    });
+                }
+                return true;
+            }
+
             case '!cooldown': {
                 if (isGroup) {
                     if (args[1] === 'on') {
@@ -741,7 +789,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!unblockuser': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
-                blacklist.delete(targetMention);
+                blacklist.index ? blacklist.delete(targetMention) : blacklist.delete(targetMention);
                 await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention] });
                 return true;
             }
