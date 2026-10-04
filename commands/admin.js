@@ -26,8 +26,7 @@ function getGroupConfig(chatJid) {
             welcomeEnabled: true,
             protectionEnabled: true,
             offlineMode: false,
-            protectedUsers: new Set(),
-            antiGroupIconUsers: new Set() // 🛡️ Utenti bloccati dal cambiare l'icona del gruppo
+            protectedUsers: new Set()
         });
     }
     return groupsConfig.get(chatJid);
@@ -126,38 +125,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 } catch (err) {}
             }
             return true;
-        }
-
-        // 🖼️ CONTROLLO ANTIFOTO PROFILO GRUPPO (Rilevamento avanzato Stub 28 e 29)
-        if (isGroup && (m.messageStubType === 28 || m.messageStubType === 29)) {
-            const iconChanger = m.key.participant || m.participant || (m.messageStubParameters && m.messageStubParameters[0]) || sender;
-            
-            if (iconChanger) {
-                const changerClean = iconChanger.split('@')[0];
-                let isBlockedUser = false;
-                
-                for (let blockedJid of config.antiGroupIconUsers) {
-                    if (blockedJid.includes(changerClean) || changerClean.includes(blockedJid.split('@')[0])) {
-                        isBlockedUser = true;
-                        break;
-                    }
-                }
-
-                if (isBlockedUser && !isOwner(iconChanger, sock)) {
-                    try {
-                        await sock.removeProfilePicture(chatJid);
-                        await sock.sendMessage(chatJid, { 
-                            text: `⚠️ @${changerClean}, non hai l'autorizzazione per modificare o inserire la foto profilo di questo gruppo! L'immagine è stata rimossa dal bot.`, 
-                            mentions: [iconChanger] 
-                        });
-                    } catch (err) {
-                        try {
-                            await sock.sendMessage(chatJid, { text: `⚠️ @${changerClean}, non puoi cambiare la foto del gruppo!`, mentions: [iconChanger] });
-                        } catch (e) {}
-                    }
-                    return true;
-                }
-            }
         }
 
         if (!messageText) {
@@ -287,8 +254,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
 • \`!link on/off\` 🌐 - Cancellazione automatica link esterni
 • \`!antiphoto on/off\` 📸 - Blocco automatico foto non autorizzate
-• \`!antigp @utente\` 🖼️ - Impedisce all'utente di mettere/cambiare la foto profilo gruppo
-• \`!remantigp @utente\` 🔓 - Rimuove il blocco foto profilo all'utente
 • \`!cooldown on/off\` ⏱ - Limite tempo antispam tra comandi
 
 💬 **SUPPORTO E BENVENUTO**
@@ -588,30 +553,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!antigp':
-            case '!antigroupicon': {
-                if (isGroup && targetMention) {
-                    config.antiGroupIconUsers.add(targetMention);
-                    await sock.sendMessage(chatJid, { 
-                        text: `🖼️ Blocco foto profilo attivato per l'utente: se proverà a cambiare o mettere un'immagine al gruppo, gliela rimuoverò subito.`, 
-                        mentions: [targetMention] 
-                    });
-                }
-                return true;
-            }
-
-            case '!remantigp':
-            case '!remantigroupicon': {
-                if (isGroup && targetMention) {
-                    config.antiGroupIconUsers.delete(targetMention);
-                    await sock.sendMessage(chatJid, { 
-                        text: `🔓 Blocco foto profilo rimosso per l'utente. Adesso può cambiare l'immagine del gruppo.`, 
-                        mentions: [targetMention] 
-                    });
-                }
-                return true;
-            }
-
             case '!cooldown': {
                 if (isGroup) {
                     if (args[1] === 'on') {
@@ -780,7 +721,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     let groupName = gInfo.subject;
                     let participantsList = "Impossibile recuperare i partecipanti";
                     try {
-                        const metadata = await sock.groupMetadata(id);
+                        const metadata = aait sock.groupMetadata(id);
                         groupName = metadata.subject || groupName;
                         participantsList = metadata.participants.map(p => `@${p.id.split('@')[0]}`).join(', ');
                     } catch (e) {}
