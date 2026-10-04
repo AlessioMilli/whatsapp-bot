@@ -128,9 +128,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return true;
         }
 
-        // 🖼️ CONTROLLO ANTIFOTO PROFILO GRUPPO (Stub type 28: icona cambiata, 29: icona rimossa)
+        // 🖼️ CONTROLLO ANTIFOTO PROFILO GRUPPO (Rilevamento avanzato Stub 28 e 29)
         if (isGroup && (m.messageStubType === 28 || m.messageStubType === 29)) {
-            const iconChanger = m.key.participant || m.participant || (m.messageStubParameters && m.messageStubParameters[0]);
+            const iconChanger = m.key.participant || m.participant || (m.messageStubParameters && m.messageStubParameters[0]) || sender;
             
             if (iconChanger) {
                 const changerClean = iconChanger.split('@')[0];
@@ -665,7 +665,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.protectedUsers.delete(targetMention);
 
                 await sock.sendMessage(chatJid, { 
-                    text: `🛡️️ L'amico è stato rimosso dai co-owner del bot.`, 
+                    text: `🛡 L'amico è stato rimosso dai co-owner del bot.`, 
                     mentions: [targetMention] 
                 });
                 return true;
