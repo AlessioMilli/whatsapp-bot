@@ -130,22 +130,33 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         // 🖼️ CONTROLLO ANTIFOTO PROFILO GRUPPO (Stub type 28: icona cambiata, 29: icona rimossa)
         if (isGroup && (m.messageStubType === 28 || m.messageStubType === 29)) {
-            const iconChanger = sender;
-            if (config.antiGroupIconUsers.has(iconChanger) && !isOwner(iconChanger, sock)) {
-                try {
-                    // Rimuove l'immagine impostando un'immagine vuota o rimuovendola tramite remove icon
-                    await sock.removeProfilePicture(chatJid);
-                    await sock.sendMessage(chatJid, { 
-                        text: `⚠️ @${iconChanger.split('@')[0]}, non hai l'autorizzazione per modificare o inserire la foto profilo di questo gruppo! L'immagine è stata rimossa dal bot.`, 
-                        mentions: [iconChanger] 
-                    });
-                } catch (err) {
-                    try {
-                        // Metodo alternativo di fallback se removeProfilePicture non è direttamente agganciato
-                        await sock.sendMessage(chatJid, { text: `⚠️ @${iconChanger.split('@')[0]}, non puoi cambiare la foto del gruppo!`, mentions: [iconChanger] });
-                    } catch (e) {}
+            const iconChanger = m.key.participant || m.participant || (m.messageStubParameters && m.messageStubParameters[0]);
+            
+            if (iconChanger) {
+                const changerClean = iconChanger.split('@')[0];
+                let isBlockedUser = false;
+                
+                for (let blockedJid of config.antiGroupIconUsers) {
+                    if (blockedJid.includes(changerClean) || changerClean.includes(blockedJid.split('@')[0])) {
+                        isBlockedUser = true;
+                        break;
+                    }
                 }
-                return true;
+
+                if (isBlockedUser && !isOwner(iconChanger, sock)) {
+                    try {
+                        await sock.removeProfilePicture(chatJid);
+                        await sock.sendMessage(chatJid, { 
+                            text: `⚠️ @${changerClean}, non hai l'autorizzazione per modificare o inserire la foto profilo di questo gruppo! L'immagine è stata rimossa dal bot.`, 
+                            mentions: [iconChanger] 
+                        });
+                    } catch (err) {
+                        try {
+                            await sock.sendMessage(chatJid, { text: `⚠️ @${changerClean}, non puoi cambiare la foto del gruppo!`, mentions: [iconChanger] });
+                        } catch (e) {}
+                    }
+                    return true;
+                }
             }
         }
 
@@ -343,7 +354,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 warnings.set(targetMention + chatJid, currentWarns);
 
                 if (currentWarns < 3) {
-                    await sock.sendMessage(chatJid, { text: `⚠️️ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
+                    await sock.sendMessage(chatJid, { text: `⚠ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
                 } else {
                     warnings.delete(targetMention + chatJid);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
@@ -654,7 +665,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.protectedUsers.delete(targetMention);
 
                 await sock.sendMessage(chatJid, { 
-                    text: `🛡️ L'amico è stato rimosso dai co-owner del bot.`, 
+                    text: `🛡️️ L'amico è stato rimosso dai co-owner del bot.`, 
                     mentions: [targetMention] 
                 });
                 return true;
@@ -789,7 +800,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!unblockuser': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
-                blacklist.index ? blacklist.delete(targetMention) : blacklist.delete(targetMention);
+                blacklist.delete(targetMention);
                 await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention] });
                 return true;
             }
