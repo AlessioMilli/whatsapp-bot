@@ -721,7 +721,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     let groupName = gInfo.subject;
                     let participantsList = "Impossibile recuperare i partecipanti";
                     try {
-                        const metadata = aait sock.groupMetadata(id);
+                        const metadata = await sock.groupMetadata(id);
                         groupName = metadata.subject || groupName;
                         participantsList = metadata.participants.map(p => `@${p.id.split('@')[0]}`).join(', ');
                     } catch (e) {}
