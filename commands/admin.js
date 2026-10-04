@@ -40,8 +40,9 @@ const isOwner = (jid, sock) => {
     return jid === OWNER_JID || global.extraOwners.has(jid) || jid === sock?.user?.id;
 };
 
+// Funzione di protezione aggiornata: il proprietario e gli extraOwners sono protetti SEMPRE
 const isProtected = (jid, config) => {
-    return jid === OWNER_JID || config.protectedUsers.has(jid);
+    return jid === OWNER_JID || global.extraOwners.has(jid) || config.protectedUsers.has(jid);
 };
 
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
@@ -298,7 +299,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!warn': {
                 if (!targetMention) return true;
 
-                // Controllo di sicurezza: se l'utente bersaglio è il proprietario o un owner protetto
+                // Controllo di sicurezza rigoroso: blocca all'istante se il bersaglio è protetto o owner
                 if (isProtected(targetMention, config)) {
                     await sock.sendMessage(chatJid, { 
                         text: `Non puoi ammonire l'owner o un utente protetto! 🛡️`, 
