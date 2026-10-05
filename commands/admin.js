@@ -264,7 +264,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!warn @utente\` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
-• \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️ - Svuota ed elimina o abbandona il gruppo
+• \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️️ - Svuota ed elimina o abbandona il gruppo
 • \`!clearalltesto [parola]\` 🔍 - Elimina per tutti i messaggi con la parola indicata
 • \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
@@ -323,7 +323,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando funziona solo all'interno dei gruppi." });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Questo comando funziona solo all'interno dei gruppi." });
                     return true;
                 }
 
@@ -341,7 +341,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 await sock.sendMessage(chatJid, { text: "🤖 Contatto Google Gemini su AI Studio per analizzare il comportamento dell'utente taggato...", mentions: [targetMention] });
 
                 try {
-                    // Chiave API estratta dalla tua schermata di Google AI Studio
                     const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
                     
                     const userMsgs = chatMap.get(targetMention);
@@ -354,10 +353,13 @@ ${formattedHistory}
 
 Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportando eventuali frasi sospette e fornendo un verdetto.`;
 
-                    // Utilizzo del modello gemini-2.5-flash
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                    // Utilizzo del modello gemini-2.5-flash con la chiave AQ tramite Authorization Bearer
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${GEMINI_API_KEY}`
+                        },
                         body: JSON.stringify({
                             contents: [{
                                 parts: [{ text: promptText }]
@@ -366,6 +368,11 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                     });
 
                     const data = await response.json();
+                    
+                    if (!response.ok) {
+                        console.error("Errore dettagliato API Gemini:", data);
+                    }
+
                     const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta valida dall'IA.";
 
                     await sock.sendMessage(chatJid, { 
@@ -416,7 +423,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
             case '!clearsender':
             case '!cleardue': {
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando può essere usato solo nei gruppi." });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Questo comando può essere usato solo nei gruppi." });
                     return true;
                 }
 
