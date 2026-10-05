@@ -80,6 +80,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             let userMsgs = chatMap.get(sender);
             userMsgs.push({
                 id: m.key.id,
+                text: messageText || "",
                 key: m.key
             });
             if (userMsgs.length > 250) userMsgs.shift();
@@ -89,7 +90,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (chatJid && m.key && m.key.fromMe && m.key.id) {
             if (!botSentMessages.has(chatJid)) botSentMessages.set(chatJid, []);
             let botList = botSentMessages.get(chatJid);
-            // Evita duplicati
             if (!botList.some(item => item.id === m.key.id)) {
                 botList.push({
                     id: m.key.id,
@@ -164,7 +164,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
-        // 📸 CONTROLLO ANTIPHOTO: Cancella le foto se il filtro è attivo e non è un admin/owner
+        // 📸 CONTROLLO ANTIPHOTO
         if (isGroup && config.photoFilter && m.message?.imageMessage && !isOwner(sender, sock)) {
             try {
                 await sock.sendMessage(chatJid, { delete: m.key });
@@ -268,6 +268,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!clearalltesto [parola]\` 🔍 - Elimina per tutti i messaggi con la parola indicata
 • \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
+🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
+• \`!aiudicar @utente\` (o \`!sentinella\`) 🛡️ - Analizza tramite Google Gemini le chat recenti dell'utente taggato per rilevare insulti, bestemmie, parolacce o litigi diretti contro owner o admin.
+
 ⚙️ **GESTIONE AMMINISTRATORI**
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
 • \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
@@ -309,6 +312,71 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
+                return true;
+            }
+
+            case '!aiudicar':
+            case '!sentinella': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Questo comando di monitoraggio avanzato tramite IA è riservato esclusivamente al proprietario." });
+                    return true;
+                }
+
+                if (!isGroup) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando funziona solo all'interno dei gruppi." });
+                    return true;
+                }
+
+                if (!targetMention) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga l'utente da sottoporre all'analisi della sentinella IA.\nEsempio: `!aiudicar @utente`" });
+                    return true;
+                }
+
+                const chatMap = groupMessages.get(chatJid);
+                if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi recenti registrati per questo utente in questa sessione da analizzare.", mentions: [targetMention] });
+                    return true;
+                }
+
+                await sock.sendMessage(chatJid, { text: "🤖 Contatto Google Gemini su AI Studio per analizzare il comportamento dell'utente taggato...", mentions: [targetMention] });
+
+                try {
+                    // Chiave API estratta dalla tua schermata di Google AI Studio
+                    const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
+                    
+                    const userMsgs = chatMap.get(targetMention);
+                    const formattedHistory = userMsgs.map(item => `- ${item.text || "[Media/Altro]"}`).join('\n');
+                    
+                    const promptText = `Sei un moderatore inflessibile di un gruppo WhatsApp. Analizza la seguente cronologia dei messaggi scritti da un utente e verifica se ci sono anomalie, insulti, bestemmie, parolacce o litigi diretti esplicitamente contro il proprietario del bot o gli amministratori del gruppo.
+
+Cronologia messaggi dell'utente:
+${formattedHistory}
+
+Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportando eventuali frasi sospette e fornendo un verdetto.`;
+
+                    // Utilizzo del modello gemini-2.5-flash
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{ text: promptText }]
+                            }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta valida dall'IA.";
+
+                    await sock.sendMessage(chatJid, { 
+                        text: `🛡 **ESITO ANALISI SENTINELLA IA**:\n\n${aiResponse}`, 
+                        mentions: [targetMention] 
+                    });
+
+                } catch (error) {
+                    console.error("Errore API Gemini:", error);
+                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione alle API di Google Gemini." });
+                }
                 return true;
             }
 
@@ -357,7 +425,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Verifica se il bot è admin
                 try {
                     const metadata = await sock.groupMetadata(chatJid);
                     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
@@ -372,7 +439,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const chatMap = groupMessages.get(chatJid);
                 if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non ho trovato messaggi recenti salvati per questo utente in questa sessione.", mentions: [targetMention] });
+                    await sock.sendMessage(chatJid, { text: "⚠ Non ho trovato messaggi recenti salvati per questo utente in questa sessione.", mentions: [targetMention] });
                     return true;
                 }
 
