@@ -17,24 +17,6 @@ function savePhoneBlacklist(blacklist) {
     fs.writeFileSync(PHONE_BLACKLIST_FILE, JSON.stringify(blacklist, null, 2));
 }
 
-// ==========================================
-// 📊 GESTIONE CREDITI GOOGLE AI STUDIO (Piano Free)
-// ==========================================
-let geminiFreeCredits = {
-    dailyLimit: 1500,       // Limite standard giornaliero (RPD)
-    usedToday: 0,           // Crediti/richieste consumate oggi
-    lastReset: Date.now()
-};
-
-function checkAndResetCredits() {
-    const now = Date.now();
-    // Reset automatico giornaliero (ogni 24 ore)
-    if (now - geminiFreeCredits.lastReset > 24 * 60 * 60 * 1000) {
-        geminiFreeCredits.usedToday = 0;
-        geminiFreeCredits.lastReset = now;
-    }
-}
-
 // Strutture dati globali di base
 const blacklist = new Set();
 const warnings = new Map();
@@ -310,7 +292,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
 🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
 • \`!aiudicar @utente\` (o \`!sentinella\`) 🛡️ - Analizza tramite Google Gemini le chat e i vocali recenti dell'utente taggato per rilevare insulti, bestemmie, parolacce o litigi diretti contro owner o admin.
-• \`!cerca [query]\` (o \`!web\`) 🌐 - Effettua una ricerca aggiornata in tempo reale sul web tramite Google Gemini
 
 ⚙️ **GESTIONE AMMINISTRATORI**
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
@@ -353,73 +334,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
-                return true;
-            }
-
-            case '!cerca':
-            case '!web': {
-                const query = messageText.replace(/^(?:!cerca|!web)/i, '').trim();
-                
-                if (!query) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Specifica cosa vuoi cercare nel web.\nEsempio: `!cerca ultime notizie tecnologia`" });
-                    return true;
-                }
-
-                await sock.sendMessage(chatJid, { text: `🔍 Cerco nel web informazioni su: "${query}"...` });
-
-                try {
-                    const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
-                    
-                    // CORRETTO: Passiamo la chiave come parametro ?key= nell'URL e rimuoviamo l'header Authorization Bearer
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            contents: [{
-                                parts: [{ text: `Cerca sul web e rispondi in modo chiaro, sintetico e aggiornato alla seguente richiesta dell'utente: ${query}` }]
-                            }],
-                            tools: [{
-                                googleSearch: {}
-                            }]
-                        })
-                    });
-
-                    const data = await response.json();
-                    
-                    if (data.error) {
-                        throw new Error(data.error.message || "Errore restituito dalle API di Google");
-                    }
-
-                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Non ho trovato risultati utili sul web per questa ricerca.";
-
-                    // 🧮 Aggiornamento e calcolo dei crediti consumati (Piano Free)
-                    checkAndResetCredits();
-                    geminiFreeCredits.usedToday += 1;
-                    const remainingCredits = geminiFreeCredits.dailyLimit - geminiFreeCredits.usedToday;
-                    const percentUsed = ((geminiFreeCredits.usedToday / geminiFreeCredits.dailyLimit) * 100).toFixed(1);
-
-                    // 🖥️ Console visiva dei crediti Google AI Studio (visibile a tutti in chat)
-                    const consoleBox = `
-╔══════════════════════════════╗
-║  📊 **CONSOLE GOOGLE AI STUDIO**  ║
-╠══════════════════════════════╣
-║ 🤖 **Modello:** Gemini Flash ║
-║ ⚡ **Stato:** OK [200 Success] ║
-║ 📥 **Chiamata Web:** Riuscita ║
-║ 📉 **Consumo odierno:** ${geminiFreeCredits.usedToday} / ${geminiFreeCredits.dailyLimit} req (${percentUsed}%) ║
-║ 🔋 **Crediti residui:** ${remainingCredits} rimaste oggi ║
-╚══════════════════════════════╝`.trim();
-
-                    await sock.sendMessage(chatJid, { 
-                        text: `🌐 **RISULTATI DELLA RICERCA WEB**:\n\n${aiResponse}\n\n\`\`\`text\n${consoleBox}\n\`\`\`` 
-                    });
-
-                } catch (error) {
-                    console.error("Errore ricerca web API Gemini:", error);
-                    await sock.sendMessage(chatJid, { text: `❌ Errore durante la chiamata API di Google Gemini: ${error.message}` });
-                }
                 return true;
             }
 
@@ -501,7 +415,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const chatMap = groupMessages.get(chatJid);
                 if (!chatMap) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Non ci sono messaggi registrati in questa chat in questa sessione." });
+                    await sock.sendMessage(chatJid, { text: "⚠ Non ci sono messaggi registrati in questa chat in questa sessione." });
                     return true;
                 }
 
