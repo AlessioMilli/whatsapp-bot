@@ -522,7 +522,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 }
 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: `!clearsender @utente`" });
+                    await sock.sendMessage(chatJid, { text: "⚠ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: `!clearsender @utente`" });
                     return true;
                 }
 
@@ -1044,7 +1044,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
             case '!unblockuser': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
                 blacklist.delete(targetMention);
-                await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention]ZH;
+                await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention] });
                 return true;
             }
 
@@ -1089,7 +1089,7 @@ export async function handleGroupParticipantsUpdate(sock, update) {
                 try {
                     await sock.groupParticipantsUpdate(chatJid, [participantJid], "remove");
                     await sock.sendMessage(chatJid, { 
-                        text: `⚠️ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`,
+                        text: `⚠️️ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`,
                         mentions: [participantJid]
                     });
                 } catch (e) {
