@@ -71,16 +71,21 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEGLI UTENTI (per !clearsender)
+        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEGLI UTENTI (inclusi i vocali)
         if (isGroup && chatJid && sender && m.key && m.key.id) {
             if (!groupMessages.has(chatJid)) groupMessages.set(chatJid, new Map());
             let chatMap = groupMessages.get(chatJid);
             if (!chatMap.has(sender)) chatMap.set(sender, []);
             
             let userMsgs = chatMap.get(sender);
+            
+            // Rilevamento presenza audio/vocale
+            const isAudio = !!m.message?.audioMessage;
+            
             userMsgs.push({
                 id: m.key.id,
                 text: messageText || "",
+                isAudio: isAudio,
                 key: m.key
             });
             if (userMsgs.length > 250) userMsgs.shift();
@@ -264,12 +269,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!warn @utente\` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
-• \`!deletegroup\` (o \`!eliminagruppo\`) 🗑️️ - Svuota ed elimina o abbandona il gruppo
+• \`!deletegroup\` (o \`!eliminagruppo\`) 🗑 - Svuota ed elimina o abbandona il gruppo
 • \`!clearalltesto [parola]\` 🔍 - Elimina per tutti i messaggi con la parola indicata
 • \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
 🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
-• \`!aiudicar @utente\` (o \`!sentinella\`) 🛡️ - Analizza tramite Google Gemini le chat recenti dell'utente taggato per rilevare insulti, bestemmie, parolacce o litigi diretti contro owner o admin.
+• \`!aiudicar @utente\` (o \`!sentinella\`) 🛡️ - Analizza tramite Google Gemini le chat e i vocali recenti dell'utente taggato per rilevare insulti, bestemmie, parolacce o litigi diretti contro owner o admin.
 
 ⚙️ **GESTIONE AMMINISTRATORI**
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
@@ -323,37 +328,60 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Questo comando funziona solo all'interno dei gruppi." });
+                    await sock.sendMessage(chatJid, { text: "⚠ Questo comando funziona solo all'interno dei gruppi." });
                     return true;
                 }
 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga l'utente da sottoporre all'analisi della sentinella IA.\nEsempio: `!aiudicar @utente`" });
+                    await sock.sendMessage(chatJid, { text: "⚠ Per favore, tagga l'utente da sottoporre all'analisi della sentinella IA.\nEsempio: `!aiudicar @utente`" });
                     return true;
                 }
 
                 const chatMap = groupMessages.get(chatJid);
-                if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
+                if (!chatMap) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi registrati in questa chat in questa sessione." });
+                    return true;
+                }
+
+                // Cerca l'utente in modo flessibile (esatta corrispondenza o che contiene la parte numerica)
+                let foundUserJid = null;
+                let userMsgs = [];
+                
+                const targetClean = targetMention.split('@')[0];
+
+                for (let [storedJid, msgs] of chatMap.entries()) {
+                    if (storedJid === targetMention || storedJid.includes(targetClean)) {
+                        foundUserJid = storedJid;
+                        userMsgs = msgs;
+                        break;
+                    }
+                }
+
+                if (!userMsgs || userMsgs.length === 0) {
                     await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi recenti registrati per questo utente in questa sessione da analizzare.", mentions: [targetMention] });
                     return true;
                 }
 
-                await sock.sendMessage(chatJid, { text: "🤖 Contatto Google Gemini su AI Studio per analizzare il comportamento dell'utente taggato...", mentions: [targetMention] });
+                await sock.sendMessage(chatJid, { text: "🤖 Contatto Google Gemini su AI Studio per analizzare i messaggi e i vocali dell'utente taggato...", mentions: [targetMention] });
 
                 try {
                     const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
                     
-                    const userMsgs = chatMap.get(targetMention);
-                    const formattedHistory = userMsgs.map(item => `- ${item.text || "[Media/Altro]"}`).join('\n');
+                    // Formattiamo la cronologia distinguendo i messaggi di testo dai messaggi vocali
+                    const formattedHistory = userMsgs.map(item => {
+                        if (item.isAudio) {
+                            return `- [Messaggio Vocale inviato dall'utente]`;
+                        }
+                        return `- ${item.text || "[Media/Altro]"}`;
+                    }).join('\n');
                     
-                    const promptText = `Sei un moderatore inflessibile di un gruppo WhatsApp. Analizza la seguente cronologia dei messaggi scritti da un utente e verifica se ci sono anomalie, insulti, bestemmie, parolacce o litigi diretti esplicitamente contro il proprietario del bot o gli amministratori del gruppo.
+                    const promptText = `Sei un moderatore inflessibile di un gruppo WhatsApp. Analizza la seguente cronologia dei messaggi (che include messaggi di testo e messaggi vocali) scritti o inviati da un utente e verifica se ci sono anomalie, insulti, bestemmie, parolacce o litigi diretti esplicitamente contro il proprietario del bot o gli amministratori del gruppo.
 
 Cronologia messaggi dell'utente:
 ${formattedHistory}
 
-Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportando eventuali frasi sospette e fornendo un verdetto.`;
+Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportando eventuali frasi o comportamenti sospetti (inclusi i vocali) e fornendo un verdetto.`;
 
-                    // Utilizzo del modello gemini-2.5-flash con la chiave AQ tramite Authorization Bearer
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
                         method: 'POST',
                         headers: { 
@@ -368,15 +396,10 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                     });
 
                     const data = await response.json();
-                    
-                    if (!response.ok) {
-                        console.error("Errore dettagliato API Gemini:", data);
-                    }
-
                     const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta valida dall'IA.";
 
                     await sock.sendMessage(chatJid, { 
-                        text: `🛡 **ESITO ANALISI SENTINELLA IA**:\n\n${aiResponse}`, 
+                        text: `🛡 **ESITO ANALISI SENTINELLA IA (Testi & Vocali)**:\n\n${aiResponse}`, 
                         mentions: [targetMention] 
                     });
 
@@ -423,7 +446,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
             case '!clearsender':
             case '!cleardue': {
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️️ Questo comando può essere usato solo nei gruppi." });
+                    await sock.sendMessage(chatJid, { text: "⚠ Questo comando può essere usato solo nei gruppi." });
                     return true;
                 }
 
@@ -777,7 +800,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 if (isGroup) {
                     if (args[1] === 'on') {
                         config.cooldownEnabled = true;
-                        await sock.sendMessage(chatJid, { text: "⏱️ Cooldown antispam attivato in questo gruppo." });
+                        await sock.sendMessage(chatJid, { text: "⏱️️ Cooldown antispam attivato in questo gruppo." });
                     } else if (args[1] === 'off') {
                         config.cooldownEnabled = false;
                         await sock.sendMessage(chatJid, { text: "⏱ Cooldown disattivato in questo gruppo." });
