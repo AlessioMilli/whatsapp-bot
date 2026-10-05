@@ -370,11 +370,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
                     
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+                    // CORRETTO: Passiamo la chiave come parametro ?key= nell'URL e rimuoviamo l'header Authorization Bearer
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${GEMINI_API_KEY}`
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
                             contents: [{
@@ -501,7 +501,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const chatMap = groupMessages.get(chatJid);
                 if (!chatMap) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi registrati in questa chat in questa sessione." });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Non ci sono messaggi registrati in questa chat in questa sessione." });
                     return true;
                 }
 
@@ -539,11 +539,10 @@ ${formattedHistory}
 
 Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportando eventuali frasi o comportamenti sospetti (inclusi i vocali) e fornendo un verdetto.`;
 
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${GEMINI_API_KEY}`
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
                             contents: [{
