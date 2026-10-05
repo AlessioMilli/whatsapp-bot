@@ -1,4 +1,21 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
+import fs from 'fs';
+
+// 📂 Percorso e funzioni per la Blacklist Telefonica Permanente
+const PHONE_BLACKLIST_FILE = './phone_blacklist.json';
+
+function loadPhoneBlacklist() {
+    if (!fs.existsSync(PHONE_BLACKLIST_FILE)) return [];
+    try {
+        return JSON.parse(fs.readFileSync(PHONE_BLACKLIST_FILE, 'utf8'));
+    } catch (e) {
+        return [];
+    }
+}
+
+function savePhoneBlacklist(blacklist) {
+    fs.writeFileSync(PHONE_BLACKLIST_FILE, JSON.stringify(blacklist, null, 2));
+}
 
 // Strutture dati globali di base
 const blacklist = new Set();
@@ -78,8 +95,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             if (!chatMap.has(sender)) chatMap.set(sender, []);
             
             let userMsgs = chatMap.get(sender);
-            
-            // Rilevamento presenza audio/vocale
             const isAudio = !!m.message?.audioMessage;
             
             userMsgs.push({
@@ -268,6 +283,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!unmute @utente\` 🔊 - Revoca il muto perpetuo
 • \`!warn @utente\` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
 • \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
+• \`!banphone <numero>\` 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso
+• \`!sblocconumero <numero>\` ✅ - Rimuove il numero dalla blacklist permanente
 • \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
 • \`!deletegroup\` (o \`!eliminagruppo\`) 🗑 - Svuota ed elimina o abbandona il gruppo
 • \`!clearalltesto [parola]\` 🔍 - Elimina per tutti i messaggi con la parola indicata
@@ -320,6 +337,65 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
+            case '!banphone':
+            case '!ban numero': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Questo comando è riservato esclusivamente al proprietario." });
+                    return true;
+                }
+
+                const targetPhone = args[1]?.replace(/[^0-9]/g, '');
+                if (!targetPhone) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido.\nEsempio: `!banphone 393331234567`" });
+                    return true;
+                }
+
+                let phoneBlacklist = loadPhoneBlacklist();
+                if (!phoneBlacklist.includes(targetPhone)) {
+                    phoneBlacklist.push(targetPhone);
+                    savePhoneBlacklist(phoneBlacklist);
+                }
+
+                if (isGroup) {
+                    try {
+                        const metadata = await sock.groupMetadata(chatJid);
+                        const participantToKick = metadata.participants.find(p => p.id.includes(targetPhone));
+                        if (participantToKick) {
+                            await sock.groupParticipantsUpdate(chatJid, [participantToKick.id], "remove");
+                        }
+                    } catch (e) {}
+                }
+
+                await sock.sendMessage(chatJid, { text: `✅ Il numero +${targetPhone} è stato inserito nella blacklist permanente. Se proveranno ad aggiungerlo, il bot lo ribannerà all'istante.` });
+                return true;
+            }
+
+            case '!sblocconumero':
+            case '!unblockphone': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Questo comando è riservato esclusivamente al proprietario." });
+                    return true;
+                }
+
+                const targetPhone = args[1]?.replace(/[^0-9]/g, '');
+                if (!targetPhone) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il numero da sbloccare.\nEsempio: `!sblocconumero 393331234567`" });
+                    return true;
+                }
+
+                let phoneBlacklist = loadPhoneBlacklist();
+                const index = phoneBlacklist.indexOf(targetPhone);
+
+                if (index !== -1) {
+                    phoneBlacklist.splice(index, 1);
+                    savePhoneBlacklist(phoneBlacklist);
+                    await sock.sendMessage(chatJid, { text: `✅ Il numero +${targetPhone} è stato rimosso dalla blacklist permanente.` });
+                } else {
+                    await sock.sendMessage(chatJid, { text: `⚠️ Il numero +${targetPhone} non è presente nella blacklist.` });
+                }
+                return true;
+            }
+
             case '!aiudicar':
             case '!sentinella': {
                 if (!isOwner(sender, sock)) {
@@ -343,15 +419,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Cerca l'utente in modo flessibile (esatta corrispondenza o che contiene la parte numerica)
-                let foundUserJid = null;
                 let userMsgs = [];
-                
                 const targetClean = targetMention.split('@')[0];
 
                 for (let [storedJid, msgs] of chatMap.entries()) {
                     if (storedJid === targetMention || storedJid.includes(targetClean)) {
-                        foundUserJid = storedJid;
                         userMsgs = msgs;
                         break;
                     }
@@ -367,7 +439,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
                     
-                    // Formattiamo la cronologia distinguendo i messaggi di testo dai messaggi vocali
                     const formattedHistory = userMsgs.map(item => {
                         if (item.isAudio) {
                             return `- [Messaggio Vocale inviato dall'utente]`;
@@ -425,7 +496,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 const count = parseInt(countStr, 10);
 
                 if (isNaN(count) || count <= 0 || count > 20) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido alla fine (massimo 20 volte per evitare il blocco dello spam)." });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido alla fine (massimo 20 volte)." });
                     return true;
                 }
 
@@ -451,21 +522,9 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 }
 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: `!clearsender @utente`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️️ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: `!clearsender @utente`" });
                     return true;
                 }
-
-                try {
-                    const metadata = await sock.groupMetadata(chatJid);
-                    const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    const botParticipant = metadata.participants.find(p => p.id === botId || p.id.includes(sock.user.id.split(':')[0]));
-                    const isBotAdmin = botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin');
-
-                    if (!isBotAdmin) {
-                        await sock.sendMessage(chatJid, { text: "❌ Per cancellare i messaggi degli altri, il bot deve essere **amministratore** del gruppo." });
-                        return true;
-                    }
-                } catch (e) {}
 
                 const chatMap = groupMessages.get(chatJid);
                 if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
@@ -800,7 +859,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 if (isGroup) {
                     if (args[1] === 'on') {
                         config.cooldownEnabled = true;
-                        await sock.sendMessage(chatJid, { text: "⏱️️ Cooldown antispam attivato in questo gruppo." });
+                        await sock.sendMessage(chatJid, { text: "⏱ Cooldown antispam attivato in questo gruppo." });
                     } else if (args[1] === 'off') {
                         config.cooldownEnabled = false;
                         await sock.sendMessage(chatJid, { text: "⏱ Cooldown disattivato in questo gruppo." });
@@ -956,7 +1015,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
             case '!listagruppi': {
                 if (!isOwner(sender, sock)) return true;
                 if (savedGroups.size === 0) {
-                    await sock.sendMessage(chatJid, { text: "📂 Nessun gruppo memorizzato finora. Fai scrivere un messaggio in un gruppo affinché il bot lo salvi." });
+                    await sock.sendMessage(chatJid, { text: "📂 Nessun gruppo memorizzato finora." });
                     return true;
                 }
                 let listText = "📂 **LISTA GRUPPI E PARTECIPANTI:**\n\n";
@@ -985,7 +1044,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
             case '!unblockuser': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
                 blacklist.delete(targetMention);
-                await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention] });
+                await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention]ZH;
                 return true;
             }
 
@@ -1014,4 +1073,29 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
         console.error("Errore:", error);
     }
     return false;
+}
+
+// 🛡️ GESTIONE EVENTO ANTI-ADD (Da inserire nel file principale del listener eventi di Baileys)
+export async function handleGroupParticipantsUpdate(sock, update) {
+    const { id: chatJid, participants, action } = update;
+    
+    if (action === 'add') {
+        const phoneBlacklist = loadPhoneBlacklist();
+        
+        for (let participantJid of participants) {
+            const phoneNumber = participantJid.replace(/[^0-9]/g, '');
+            
+            if (phoneBlacklist.includes(phoneNumber)) {
+                try {
+                    await sock.groupParticipantsUpdate(chatJid, [participantJid], "remove");
+                    await sock.sendMessage(chatJid, { 
+                        text: `⚠️ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`,
+                        mentions: [participantJid]
+                    });
+                } catch (e) {
+                    console.error("Errore durante il ribannaggio automatico:", e);
+                }
+            }
+        }
+    }
 }
