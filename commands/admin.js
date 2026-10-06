@@ -22,6 +22,7 @@ const blacklist = new Set();
 const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
+const geminiCooldowns = new Map(); // Cooldown specifico per i comandi IA (15 secondi)
 
 // Archivi globali per il tracciamento in tempo reale dei messaggi
 const savedGroups = new Map();
@@ -292,6 +293,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
 🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
 • \`!aiudicar @utente\` (o \`!sentinella\`) 🛡️ - Analizza tramite Google Gemini le chat e i vocali recenti dell'utente taggato per rilevare insulti, bestemmie, parolacce o litigi diretti contro owner o admin.
+• \`!parla [domanda]\` (o \`!ia [domanda]\`) 💡 - Chatta direttamente con Google Gemini
 
 ⚙️ **GESTIONE AMMINISTRATORI**
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
@@ -476,6 +478,56 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
                     await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione alle API di Google Gemini." });
+                }
+                return true;
+            }
+
+            case '!parla':
+            case '!ia': {
+                const userQuery = messageText.replace(/^(?:!parla|!ia)/i, '').trim();
+                
+                if (!userQuery) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi una domanda o un argomento dopo il comando.\nEsempio: `!parla cos'è un buco nero?`" });
+                    return true;
+                }
+
+                // Cooldown di 15 secondi per gli utenti non owner
+                if (!isOwner(sender, sock)) {
+                    const now = Date.now();
+                    const lastAiTime = geminiCooldowns.get(sender) || 0;
+                    const cooldownTimeMs = 15000; // 15 secondi
+                    
+                    if (now - lastAiTime < cooldownTimeMs) {
+                        const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
+                        await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di usare nuovamente il comando IA.`, mentions: [sender] });
+                        return true;
+                    }
+                    geminiCooldowns.set(sender, now);
+                }
+
+                try {
+                    const GEMINI_API_KEY = "INCOLLA_QUI_LA_TUA_CHIAVE_API";
+
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{ text: userQuery }]
+                            }]
+                        })
+                    });
+
+                    const data = await response.json();
+                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta.";
+
+                    await sock.sendMessage(chatJid, { text: `🤖 **Gemini IA**:\n\n${aiResponse}` });
+
+                } catch (error) {
+                    console.error("Errore API Gemini Chat:", error);
+                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione con l'intelligenza artificiale." });
                 }
                 return true;
             }
