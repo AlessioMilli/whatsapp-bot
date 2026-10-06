@@ -506,7 +506,7 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 }
 
                 try {
-                    const GEMINI_API_KEY = "INCOLLA_QUI_LA_TUA_CHIAVE_API";
+                    const GEMINI_API_KEY = "AQ.Ab8RN6LcaXb58kHXqEg0itJcIIL5B8RaJdk3rSbqjX-PRWehrA";
 
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
