@@ -1,6 +1,9 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import fs from 'fs';
 
+const GEMINI_API_KEY = "AQ.Ab8RN6LcaXb58kHXqEg0itJcIIL5B8RaJdk3rSbqjX-PRWehrA";
+const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY;
+
 // 📂 Percorso e funzioni per la Blacklist Telefonica Permanente
 const PHONE_BLACKLIST_FILE = './phone_blacklist.json';
 
@@ -439,8 +442,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 await sock.sendMessage(chatJid, { text: "🤖 Contatto Google Gemini su AI Studio per analizzare i messaggi e i vocali dell'utente taggato...", mentions: [targetMention] });
 
                 try {
-                    const GEMINI_API_KEY = "AQ.Ab8RN6KSDFlAytyZP2TADM1XIK87Nbr5jYlpLPQWAPVgVuFqCBg";
-                    
                     const formattedHistory = userMsgs.map(item => {
                         if (item.isAudio) {
                             return `- [Messaggio Vocale inviato dall'utente]`;
@@ -506,8 +507,6 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                 }
 
                 try {
-                    const GEMINI_API_KEY = "AQ.Ab8RN6LcaXb58kHXqEg0itJcIIL5B8RaJdk3rSbqjX-PRWehrA";
-
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
