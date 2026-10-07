@@ -1117,3 +1117,32 @@ Fornisci una risposta sintetica e utile in italiano basandoti su questi dati.`;
         }
 
     } catch (error) {
+        console.error("Errore:", error);
+    }
+    return false;
+}
+
+// 🛡️ GESTIONE EVENTO ANTI-ADD
+export async function handleGroupParticipantsUpdate(sock, update) {
+    const { id: chatJid, participants, action } = update;
+    
+    if (action === 'add') {
+        const phoneBlacklist = loadPhoneBlacklist();
+        
+        for (let participantJid of participants) {
+            const phoneNumber = participantJid.replace(/[^0-9]/g, '');
+            
+            if (phoneBlacklist.includes(phoneNumber)) {
+                try {
+                    await sock.groupParticipantsUpdate(chatJid, [participantJid], "remove");
+                    await sock.sendMessage(chatJid, { 
+                        text: `⚠ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`,
+                        mentions: [participantJid]
+                    });
+                } catch (e) {
+                    console.error("Errore durante il ribannaggio automatico:", e);
+                }
+            }
+        }
+    }
+}
