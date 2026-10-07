@@ -1,9 +1,6 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import fs from 'fs';
 
-const GEMINI_API_KEY = "AQ.Ab8RN6LcaXb58kHXqEg0itJcIIL5B8RaJdk3rSbqjX-PRWehrA";
-const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + GEMINI_API_KEY;
-
 // 📂 Percorso e funzioni per la Blacklist Telefonica Permanente
 const PHONE_BLACKLIST_FILE = './phone_blacklist.json';
 
@@ -25,7 +22,7 @@ const blacklist = new Set();
 const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
-const geminiCooldowns = new Map(); // Cooldown specifico per i comandi IA (15 secondi)
+const aiCooldowns = new Map(); // Cooldown specifico per i comandi IA (15 secondi)
 
 // Archivi globali per il tracciamento in tempo reale dei messaggi
 const savedGroups = new Map();
@@ -295,8 +292,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
 🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
-• \`!aiudicar @utente\` (o \`!sentinella\`) 🛡️ - Analizza tramite Google Gemini le chat e i vocali recenti dell'utente taggato per rilevare insulti, bestemmie, parolacce o litigi diretti contro owner o admin.
-• \`!parla [domanda]\` (o \`!ia [domanda]\`) 💡 - Chatta direttamente con Google Gemini
+• \`!parla [domanda]\` (o \`!ia [domanda]\`) 💡 - Chatta direttamente con le API Cloud di Ollama
+• \`!cerca [query]\` (o \`!web [query]\`) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
 
 ⚙️ **GESTIONE AMMINISTRATORI**
 • \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
@@ -401,88 +398,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!aiudicar':
-            case '!sentinella': {
-                if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Questo comando di monitoraggio avanzato tramite IA è riservato esclusivamente al proprietario." });
-                    return true;
-                }
-
-                if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Questo comando funziona solo all'interno dei gruppi." });
-                    return true;
-                }
-
-                if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Per favore, tagga l'utente da sottoporre all'analisi della sentinella IA.\nEsempio: `!aiudicar @utente`" });
-                    return true;
-                }
-
-                const chatMap = groupMessages.get(chatJid);
-                if (!chatMap) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Non ci sono messaggi registrati in questa chat in questa sessione." });
-                    return true;
-                }
-
-                let userMsgs = [];
-                const targetClean = targetMention.split('@')[0];
-
-                for (let [storedJid, msgs] of chatMap.entries()) {
-                    if (storedJid === targetMention || storedJid.includes(targetClean)) {
-                        userMsgs = msgs;
-                        break;
-                    }
-                }
-
-                if (!userMsgs || userMsgs.length === 0) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi recenti registrati per questo utente in questa sessione da analizzare.", mentions: [targetMention] });
-                    return true;
-                }
-
-                await sock.sendMessage(chatJid, { text: "🤖 Contatto Google Gemini su AI Studio per analizzare i messaggi e i vocali dell'utente taggato...", mentions: [targetMention] });
-
-                try {
-                    const formattedHistory = userMsgs.map(item => {
-                        if (item.isAudio) {
-                            return `- [Messaggio Vocale inviato dall'utente]`;
-                        }
-                        return `- ${item.text || "[Media/Altro]"}`;
-                    }).join('\n');
-                    
-                    const promptText = `Sei un moderatore inflessibile di un gruppo WhatsApp. Analizza la seguente cronologia dei messaggi (che include messaggi di testo e messaggi vocali) scritti o inviati da un utente e verifica se ci sono anomalie, insulti, bestemmie, parolacce o litigi diretti esplicitamente contro il proprietario del bot o gli amministratori del gruppo.
-
-Cronologia messaggi dell'utente:
-${formattedHistory}
-
-Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportando eventuali frasi o comportamenti sospetti (inclusi i vocali) e fornendo un verdetto.`;
-
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            contents: [{
-                                parts: [{ text: promptText }]
-                            }]
-                        })
-                    });
-
-                    const data = await response.json();
-                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Nessuna risposta valida dall'IA.";
-
-                    await sock.sendMessage(chatJid, { 
-                        text: `🛡 **ESITO ANALISI SENTINELLA IA (Testi & Vocali)**:\n\n${aiResponse}`, 
-                        mentions: [targetMention] 
-                    });
-
-                } catch (error) {
-                    console.error("Errore API Gemini:", error);
-                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione alle API di Google Gemini." });
-                }
-                return true;
-            }
-
             case '!parla':
             case '!ia': {
                 const userQuery = messageText.replace(/^(?:!parla|!ia)/i, '').trim();
@@ -492,41 +407,123 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
                     return true;
                 }
 
-                // Cooldown di 15 secondi per gli utenti non owner
                 if (!isOwner(sender, sock)) {
                     const now = Date.now();
-                    const lastAiTime = geminiCooldowns.get(sender) || 0;
-                    const cooldownTimeMs = 15000; // 15 secondi
+                    const lastAiTime = aiCooldowns.get(sender) || 0;
+                    const cooldownTimeMs = 15000;
                     
                     if (now - lastAiTime < cooldownTimeMs) {
                         const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
                         await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di usare nuovamente il comando IA.`, mentions: [sender] });
                         return true;
                     }
-                    geminiCooldowns.set(sender, now);
+                    aiCooldowns.set(sender, now);
                 }
 
                 try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                    const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
+
+                    const response = await fetch('https://ollama.com/v1/chat/completions', {
                         method: 'POST',
                         headers: { 
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${OLLAMA_API_KEY}`
                         },
                         body: JSON.stringify({
-                            contents: [{
-                                parts: [{ text: userQuery }]
-                            }]
+                            model: 'llama3.2',
+                            messages: [
+                                { role: 'user', content: userQuery }
+                            ],
+                            stream: false
                         })
                     });
 
                     const data = await response.json();
-                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta.";
+                    const aiResponse = data?.choices?.[0]?.message?.content || "Mi dispiace, non sono riuscito a elaborare una risposta.";
 
-                    await sock.sendMessage(chatJid, { text: `🤖 **Gemini IA**:\n\n${aiResponse}` });
+                    await sock.sendMessage(chatJid, { text: `🤖 **Ollama IA**:\n\n${aiResponse}` });
 
                 } catch (error) {
-                    console.error("Errore API Gemini Chat:", error);
-                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione con l'intelligenza artificiale." });
+                    console.error("Errore API Ollama:", error);
+                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione con l'intelligenza artificiale di Ollama." });
+                }
+                return true;
+            }
+
+            case '!cerca':
+            case '!web': {
+                const searchQuery = messageText.replace(/^(?:!cerca|!web)/i, '').trim();
+
+                if (!searchQuery) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci cosa desideri cercare sul web.\nEsempio: `!cerca ultime notizie tecnologia`" });
+                    return true;
+                }
+
+                if (!isOwner(sender, sock)) {
+                    const now = Date.now();
+                    const lastAiTime = aiCooldowns.get(sender) || 0;
+                    const cooldownTimeMs = 15000;
+                    
+                    if (now - lastAiTime < cooldownTimeMs) {
+                        const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
+                        await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di effettuare un'altra ricerca web.`, mentions: [sender] });
+                        return true;
+                    }
+                    aiCooldowns.set(sender, now);
+                }
+
+                try {
+                    const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
+
+                    const searchResponse = await fetch('https://ollama.com/api/web_search', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${OLLAMA_API_KEY}`
+                        },
+                        body: JSON.stringify({ query: searchQuery })
+                    });
+
+                    const searchData = await searchResponse.json();
+                    const results = searchData?.results || [];
+
+                    if (results.length === 0) {
+                        await sock.sendMessage(chatJid, { text: `🔍 Non ho trovato risultati sul web per: "${searchQuery}"` });
+                        return true;
+                    }
+
+                    const contextText = results.map((r, idx) => `[${idx + 1}] ${r.title}\nURL: ${r.url}\nContenuto: ${r.content}`).join('\n\n');
+
+                    const promptText = `Usa le seguenti informazioni trovate sul web per rispondere in modo chiaro e dettagliato alla richiesta dell'utente: "${searchQuery}".
+
+Risultati della ricerca web:
+${contextText}
+
+Fornisci una risposta sintetica e utile in italiano basandoti su questi dati.`;
+
+                    const chatResponse = await fetch('https://ollama.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${OLLAMA_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            model: 'llama3.2',
+                            messages: [
+                                { role: 'user', content: promptText }
+                            ],
+                            stream: false
+                        })
+                    });
+
+                    const chatData = await chatResponse.json();
+                    const webAnswer = chatData?.choices?.[0]?.message?.content || "Risultati trovati, ma non sono riuscito a elaborarli.";
+
+                    await sock.sendMessage(chatJid, { text: `🌐 **Navigazione Web Ollama**:\n\n${webAnswer}` });
+
+                } catch (error) {
+                    console.error("Errore Web Search Ollama:", error);
+                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la ricerca web con Ollama." });
                 }
                 return true;
             }
@@ -1120,32 +1117,3 @@ Rispondi in modo sintetico in italiano indicando se ci sono violazioni, riportan
         }
 
     } catch (error) {
-        console.error("Errore:", error);
-    }
-    return false;
-}
-
-// 🛡️ GESTIONE EVENTO ANTI-ADD (Da inserire nel file principale del listener eventi di Baileys)
-export async function handleGroupParticipantsUpdate(sock, update) {
-    const { id: chatJid, participants, action } = update;
-    
-    if (action === 'add') {
-        const phoneBlacklist = loadPhoneBlacklist();
-        
-        for (let participantJid of participants) {
-            const phoneNumber = participantJid.replace(/[^0-9]/g, '');
-            
-            if (phoneBlacklist.includes(phoneNumber)) {
-                try {
-                    await sock.groupParticipantsUpdate(chatJid, [participantJid], "remove");
-                    await sock.sendMessage(chatJid, { 
-                        text: `⚠ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`,
-                        mentions: [participantJid]
-                    });
-                } catch (e) {
-                    console.error("Errore durante il ribannaggio automatico:", e);
-                }
-            }
-        }
-    }
-}
