@@ -17,6 +17,17 @@ function savePhoneBlacklist(blacklist) {
     fs.writeFileSync(PHONE_BLACKLIST_FILE, JSON.stringify(blacklist, null, 2));
 }
 
+// Funzione per recuperare la chiave API dell'IA (da file locale o variabili d'ambiente)
+function getApiKey() {
+    if (fs.existsSync('./config_ai.json')) {
+        try {
+            const data = JSON.parse(fs.readFileSync('./config_ai.json', 'utf8'));
+            if (data && data.apiKey) return data.apiKey;
+        } catch (e) {}
+    }
+    return process.env.OLLAMA_API_KEY || "";
+}
+
 // Strutture dati globali di base
 const blacklist = new Set();
 const warnings = new Map();
@@ -292,6 +303,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 • \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
 🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
+• \`!setgeminiak [chiave]\` 🔑 - Imposta la chiave API direttamente in chat privata
 • \`!parla [domanda]\` (o \`!ia [domanda]\`) 💡 - Chatta direttamente con le API Cloud di Ollama
 • \`!cerca [query]\` (o \`!web [query]\`) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
 
@@ -336,6 +348,37 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
+                return true;
+            }
+
+            case '!setgeminiak':
+            case '!setapi': {
+                if (isGroup) {
+                    await sock.sendMessage(chatJid, { text: "🔒 Per motivi di sicurezza, puoi impostare la chiave API inviandomi questo comando **unicamente in chat privata**." });
+                    return true;
+                }
+
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Non hai i permessi per configurare la chiave API." });
+                    return true;
+                }
+
+                const newKey = messageText.replace(/^(?:!setgeminiak|!setapi)/i, '').trim();
+
+                if (!newKey) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci la chiave API dopo il comando.\nEsempio: `!setgeminiak la_tua_chiave_qui`" });
+                    return true;
+                }
+
+                try {
+                    const configData = { apiKey: newKey };
+                    fs.writeFileSync('./config_ai.json', JSON.stringify(configData, null, 2));
+                    
+                    await sock.sendMessage(chatJid, { text: "✅ **Chiave API salvata con successo!**\nTutte le funzionalità dell'intelligenza artificiale sono ora sbloccate e pronte all'uso." });
+                } catch (err) {
+                    console.error("Errore salvataggio chiave API:", err);
+                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante il salvataggio della chiave." });
+                }
                 return true;
             }
 
@@ -407,6 +450,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
+                const OLLAMA_API_KEY = getApiKey();
+                if (!OLLAMA_API_KEY) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando `!setgeminiak <tua_chiave>` per sbloccare l'IA." });
+                    return true;
+                }
+
                 if (!isOwner(sender, sock)) {
                     const now = Date.now();
                     const lastAiTime = aiCooldowns.get(sender) || 0;
@@ -421,8 +470,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 try {
-                    const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
-
                     const response = await fetch('https://ollama.com/v1/chat/completions', {
                         method: 'POST',
                         headers: { 
@@ -459,6 +506,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
+                const OLLAMA_API_KEY = getApiKey();
+                if (!OLLAMA_API_KEY) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando `!setgeminiak <tua_chiave>` per sbloccare la ricerca web." });
+                    return true;
+                }
+
                 if (!isOwner(sender, sock)) {
                     const now = Date.now();
                     const lastAiTime = aiCooldowns.get(sender) || 0;
@@ -473,8 +526,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 try {
-                    const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY;
-
                     const searchResponse = await fetch('https://ollama.com/api/web_search', {
                         method: 'POST',
                         headers: {
@@ -484,15 +535,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         body: JSON.stringify({ query: searchQuery })
                     });
 
+                    if (!searchResponse.ok) {
+                        throw new Error(`Errore HTTP: ${searchResponse.status}`);
+                    }
+
                     const searchData = await searchResponse.json();
-                    const results = searchData?.results || [];
+                    const results = searchData?.results || searchData?.data || searchData?.items || searchData?.sources || [];
 
                     if (results.length === 0) {
                         await sock.sendMessage(chatJid, { text: `🔍 Non ho trovato risultati sul web per: "${searchQuery}"` });
                         return true;
                     }
 
-                    const contextText = results.map((r, idx) => `[${idx + 1}] ${r.title}\nURL: ${r.url}\nContenuto: ${r.content}`).join('\n\n');
+                    const contextText = results.slice(0, 3).map((r, idx) => `[${idx + 1}] ${r.title || r.name || 'Risultato'}\nURL: ${r.url || 'N/D'}\nContenuto: ${r.snippet || r.content || ''}`).join('\n\n');
 
                     const promptText = `Usa le seguenti informazioni trovate sul web per rispondere in modo chiaro e dettagliato alla richiesta dell'utente: "${searchQuery}".
 
@@ -515,6 +570,10 @@ Fornisci una risposta sintetica e utile in italiano basandoti su questi dati.`;
                             stream: false
                         })
                     });
+
+                    if (!chatResponse.ok) {
+                        throw new Error(`Errore HTTP chat: ${chatResponse.status}`);
+                    }
 
                     const chatData = await chatResponse.json();
                     const webAnswer = chatData?.choices?.[0]?.message?.content || "Risultati trovati, ma non sono riuscito a elaborarli.";
