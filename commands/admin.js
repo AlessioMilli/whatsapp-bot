@@ -180,7 +180,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const desc = metadata.desc ? metadata.desc.trim() : "";
                     const groupName = metadata.subject || "questo gruppo";
                     
-                    let welcomeText = `Buongiorno @${newMemberJid.split('@')[0]} e benvenuto/a nel gruppo ${groupName}\n\n`;
+                    let welcomeText = `Buongiorno @${newMemberJid.split('@')[0]} e benvenuto/a nel gruppo${groupName}\n\n`;
                     if (desc) welcomeText += `Leggi con attenzione le regole: ${desc}`;
 
                     await sock.sendMessage(chatJid, { text: welcomeText, mentions: [newMemberJid] });
@@ -338,13 +338,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isOwner(sender, sock)) {
                     menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**
 1. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dell'utente nel database
-2. \`!lockgroup\` / \`!unlockgroup\` 🔐 - Blocca o sblocca totalmente la chat del gruppo
-3. \`!backup\` 💾 - Invia il backup completo in chat privata all'owner
-4. \`!emergencyoff\` / \`!emergencyon\` ⚡ - Spegnimento o riattivazione totale d'emergenza del bot
-5. \`!statsbot\` 📈 - Mostra statistiche di utilizzo e gruppi attivi
-6. \`!blockuser @utente\` / \`!unblockuser @utente\` 🚫 - Gestisce la blacklist globale dei comandi
-7. \`!cleandb\` 🗄 - Esegue una pulizia automatica del database e dei warn obsoleti
-8. \`!listagruppi\` 📂 - Mostra la lista di tutti i gruppi salvati con i loro ID e partecipanti`;
+2. \`!lockgroup\` / \`!unlockgroup\``;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -502,13 +496,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const searchQuery = messageText.replace(/^(?:!cerca|!web)/i, '').trim();
 
                 if (!searchQuery) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci cosa desideri cercare sul web.\nEsempio: `!cerca ultime notizie tecnologia`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci cosa desideri cercare.\nEsempio: `!cerca quando è nato lyon wgf`" });
                     return true;
                 }
 
                 const OLLAMA_API_KEY = getApiKey();
                 if (!OLLAMA_API_KEY) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando `!setgeminiak <tua_chiave>` per sbloccare la ricerca web." });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando `!setgeminiak <tua_chiave>` per sbloccare la ricerca." });
                     return true;
                 }
 
@@ -519,44 +513,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     
                     if (now - lastAiTime < cooldownTimeMs) {
                         const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
-                        await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di effettuare un'altra ricerca web.`, mentions: [sender] });
+                        await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di effettuare un'altra ricerca.`, mentions: [sender] });
                         return true;
                     }
                     aiCooldowns.set(sender, now);
                 }
 
                 try {
-                    const searchResponse = await fetch('https://ollama.com/api/web_search', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${OLLAMA_API_KEY}`
-                        },
-                        body: JSON.stringify({ query: searchQuery })
-                    });
-
-                    if (!searchResponse.ok) {
-                        throw new Error(`Errore HTTP: ${searchResponse.status}`);
-                    }
-
-                    const searchData = await searchResponse.json();
-                    const results = searchData?.results || searchData?.data || searchData?.items || searchData?.sources || [];
-
-                    if (results.length === 0) {
-                        await sock.sendMessage(chatJid, { text: `🔍 Non ho trovato risultati sul web per: "${searchQuery}"` });
-                        return true;
-                    }
-
-                    const contextText = results.slice(0, 3).map((r, idx) => `[${idx + 1}] ${r.title || r.name || 'Risultato'}\nURL: ${r.url || 'N/D'}\nContenuto: ${r.snippet || r.content || ''}`).join('\n\n');
-
-                    const promptText = `Usa le seguenti informazioni trovate sul web per rispondere in modo chiaro e dettagliato alla richiesta dell'utente: "${searchQuery}".
-
-Risultati della ricerca web:
-${contextText}
-
-Fornisci una risposta sintetica e utile in italiano basandoti su questi dati.`;
-
-                    const chatResponse = await fetch('https://ollama.com/v1/chat/completions', {
+                    const response = await fetch('https://ollama.com/v1/chat/completions', {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
@@ -565,24 +529,20 @@ Fornisci una risposta sintetica e utile in italiano basandoti su questi dati.`;
                         body: JSON.stringify({
                             model: 'llama3.2',
                             messages: [
-                                { role: 'user', content: promptText }
+                                { role: 'user', content: searchQuery }
                             ],
                             stream: false
                         })
                     });
 
-                    if (!chatResponse.ok) {
-                        throw new Error(`Errore HTTP chat: ${chatResponse.status}`);
-                    }
+                    const data = await response.json();
+                    const webAnswer = data?.choices?.[0]?.message?.content || "Mi dispiace, non sono riuscito a elaborare una risposta.";
 
-                    const chatData = await chatResponse.json();
-                    const webAnswer = chatData?.choices?.[0]?.message?.content || "Risultati trovati, ma non sono riuscito a elaborarli.";
-
-                    await sock.sendMessage(chatJid, { text: `🌐 **Navigazione Web Ollama**:\n\n${webAnswer}` });
+                    await sock.sendMessage(chatJid, { text: `🌐 **Risposta Web**:\n\n${webAnswer}` });
 
                 } catch (error) {
                     console.error("Errore Web Search Ollama:", error);
-                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la ricerca web con Ollama." });
+                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la richiesta." });
                 }
                 return true;
             }
