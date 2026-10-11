@@ -1,9 +1,10 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import fs from 'fs';
 
-// 📂 Percorso e funzioni per la Blacklist Telefonica Permanente
+// 📂 Percorsi dei file di database locale
 const PHONE_BLACKLIST_FILE = './phone_blacklist.json';
 const STATE_FILE = './bot_state.json';
+const CUSTOM_COMMANDS_FILE = './custom_commands.json';
 
 function loadPhoneBlacklist() {
     if (!fs.existsSync(PHONE_BLACKLIST_FILE)) return [];
@@ -35,6 +36,33 @@ const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
 const aiCooldowns = new Map(); // Cooldown specifico per i comandi IA (15 secondi)
+
+// Mappa per i comandi personalizzati dinamici (comando -> risposta)
+const customCommands = new Map();
+
+// Caricamento dei comandi personalizzati salvati
+if (fs.existsSync(CUSTOM_COMMANDS_FILE)) {
+    try {
+        const savedCmds = JSON.parse(fs.readFileSync(CUSTOM_COMMANDS_FILE, 'utf8'));
+        for (let [cmd, resp] of Object.entries(savedCmds)) {
+            customCommands.set(cmd.toLowerCase(), resp);
+        }
+    } catch (e) {
+        console.error("Errore nel caricamento dei comandi personalizzati:", e);
+    }
+}
+
+function saveCustomCommands() {
+    try {
+        const obj = {};
+        for (let [cmd, resp] of customCommands.entries()) {
+            obj[cmd] = resp;
+        }
+        fs.writeFileSync(CUSTOM_COMMANDS_FILE, JSON.stringify(obj, null, 2));
+    } catch (e) {
+        console.error("Errore nel salvataggio dei comandi personalizzati:", e);
+    }
+}
 
 // Archivi globali per il tracciamento in tempo reale dei messaggi
 const savedGroups = new Map();
@@ -270,6 +298,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         const command = args[0].toLowerCase();
         const targetMention = getTargetJid();
 
+        // 🧠 Controllo se è un comando personalizzato dinamico salvato nel database
+        if (customCommands.has(command)) {
+            const customResponse = customCommands.get(command);
+            await sock.sendMessage(chatJid, { text: customResponse });
+            return true;
+        }
+
         if (isGroup && config.isInactive) {
             if (command === '!gruppo' && args[1] === 'on' && isOwner(sender, sock)) {
                 config.isInactive = false;
@@ -324,6 +359,37 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         switch (command) {
+            case '!aggiungicomando':
+            case '!addcmd':
+            case '!nuovocomando': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato al proprietario." });
+                    return true;
+                }
+
+                // Estrae il testo dopo il comando
+                const content = messageText.replace(/^(?:!aggiungicomando|!addcmd|!nuovocomando)/i, '').trim();
+                const parts = content.split(/\s+/);
+                
+                let newCmd = parts[0] ? parts[0].toLowerCase() : "";
+                let responseText = parts.slice(1).join(' ').trim();
+
+                // Se non viene specificato il comando o il testo, il bot inventa tutto da solo
+                if (!newCmd || !newCmd.startsWith('!') || !responseText) {
+                    const randomNum = Math.floor(Math.random() * 1000);
+                    newCmd = `!comando_${randomNum}`;
+                    responseText = `🤖 Ecco un comando inventato automaticamente dal bot! Tutto funziona alla perfezione.`;
+                }
+
+                customCommands.set(newCmd, responseText);
+                saveCustomCommands();
+
+                await sock.sendMessage(chatJid, { 
+                    text: `✅ **Comando aggiunto con successo!**\n\n• **Comando:** \`${newCmd}\`\n• **Risposta:** ${responseText}\n\nIl comando è stato integrato nel database locale e salvato permanentemente.` 
+                });
+                return true;
+            }
+
             case '!aggiornacodice':
             case '!ricarica':
             case '!reload': {
@@ -332,7 +398,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
                 saveBotState();
-                await sock.sendMessage(chatJid, { text: "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni attuali, gli ID e i co-owner sono stati salvati permanentemente nel database locale." });
+                saveCustomCommands();
+                await sock.sendMessage(chatJid, { text: "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni, i comandi personalizzati e gli ID sono stati salvati permanentemente." });
                 return true;
             }
 
@@ -499,11 +566,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !antiphoto on/off 📸 - Blocco automatico foto non autorizzate
 - !cooldown on/off ⏱ - Limite tempo antispam tra comandi
 
-🆔 IDENTIFICAZIONE CHAT (JID) & AGGIORNAMENTO
+🆔 IDENTIFICAZIONE, AGGIORNAMENTO E COMANDI EXTRA
 - !getjid 📌 - Mostra il JID unico della chat corrente
 - !getjid gruppo [nome] 📋 - Cerca JID gruppi
 - !getjid numero <num> / !getjid utente <nome> / !getjid @utente 👤 - Cerca JID utente
 - !aggiornacodice (o !reload) 🔄 - Salva e aggiorna le protezioni e lo stato del bot
+- !aggiungicomando [!cmd] [testo] ➕ - Aggiunge un comando personalizzato (o inventato dal bot se lasciato vuoto)
 
 💬 SUPPORTO E BENVENUTO
 - !commands (o !aiuto / !menu) 📖 - Mostra questo menu comandi
@@ -516,6 +584,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 if (isOwner(sender, sock)) {
                     menuText += `\n\n🚀 COMANDI ESCLUSIVI OWNER\n1. !inspect @utente 🔍 - Mostra la scheda informativa dell'utente nel database\n2. !lockgroup / !unlockgroup`;
+                }
+
+                if (customCommands.size > 0) {
+                    menuText += `\n\n✨ **COMANDI PERSONALIZZATI AGGIUNTI:**\n`;
+                    for (let cmd of customCommands.keys()) {
+                        menuText += `• \`${cmd}\`\n`;
+                    }
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
