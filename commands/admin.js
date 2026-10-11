@@ -576,7 +576,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
 ⚙️ IMPOSTAZIONI E SICUREZZA GRUPPO
 - !checkadmin 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
-- !gruppo on/off 🤖 - Attiva/disattiva il bot nel gruppo
+- !gruppo on/off [ID_gruppo] 🤖 - Attiva/disattiva il bot nel gruppo (anche da remoto)
 - !editgroup on/off ✏ - Gestisce la modifica info gruppo
 - !approva on/off 📋 - Gestisce approvazione nuovi membri
 - !addmember on/off ➕ - Gestisce restrizione aggiunta partecipanti
@@ -1093,7 +1093,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!chiedialessio': {
                 const userMessage = messageText.replace(/^!chiedialessio/i, '').trim();
                 if (userMessage) {
-                    await sock.sendMessage(OWNER_JID, { text: `✉ Supporto da gruppo:\nUtente: @${sender.split('@')[0]}\nTesto: ${userMessage}`, mentions: [sender] });
+                    await sock.sendMessage(OWNER_JID, { text: `✉ Supporto da gruppo:\nUtente: @${sender.split('@')[0]}\nTesto:${userMessage}`, mentions: [sender] });
                     await sock.sendMessage(chatJid, { text: "✉ Messaggio inoltrato con successo ad Alessio." });
                 }
                 return true;
@@ -1404,14 +1404,40 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!gruppo': {
-                if (isGroup && isOwner(sender, sock)) {
-                    if (args[1] === 'off') {
+                if (!isOwner(sender, sock)) return true;
+
+                const action = args[1]?.toLowerCase();
+                const targetGroupArg = args[2] || args.slice(2).join(' ');
+
+                // Gestione da remoto tramite ID del gruppo
+                if (targetGroupArg && (action === 'off' || action === 'on')) {
+                    let targetChatJid = targetGroupArg.trim();
+                    if (!targetChatJid.endsWith('@g.us')) {
+                        targetChatJid += '@g.us';
+                    }
+
+                    const targetConfig = getGroupConfig(targetChatJid);
+                    if (action === 'off') {
+                        targetConfig.isInactive = true;
+                        await sock.sendMessage(chatJid, { text: `🤖 Bot disattivato con successo nel gruppo con ID: \`${targetChatJid}\`` });
+                    } else if (action === 'on') {
+                        targetConfig.isInactive = false;
+                        await sock.sendMessage(chatJid, { text: `🤖 Bot riattivato con successo nel gruppo con ID: \`${targetChatJid}\`` });
+                    }
+                    return true;
+                }
+
+                // Gestione nel gruppo corrente
+                if (isGroup) {
+                    if (action === 'off') {
                         config.isInactive = true;
                         await sock.sendMessage(chatJid, { text: "🤖 Bot disattivato in questo specifico gruppo." });
-                    } else if (args[1] === 'on') {
+                    } else if (action === 'on') {
                         config.isInactive = false;
                         await sock.sendMessage(chatJid, { text: "🤖 Bot riattivato in questo specifico gruppo." });
                     }
+                } else {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Per usare il comando qui, specifica l'azione e l'ID del gruppo.\nEsempio: `!gruppo off 120363000000000000@g.us`" });
                 }
                 return true;
             }
