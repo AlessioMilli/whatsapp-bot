@@ -291,49 +291,53 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 let menuText = `📋 **LISTA COMPLETA DEI COMANDI DEL BOT**
 
 🛑 **GESTIONE MODERAZIONE E SANZIONI**
-• \`!mute @utente\` 🔇 - Muto perpetuo e cancellazione automatica messaggi
-• \`!unmute @utente\` 🔊 - Revoca il muto perpetuo
-• \`!warn @utente\` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
-• \`!kick @utente\` (o \`!rimuovi\`) ❌ - Rimuove ed espelle immediatamente l'utente
-• \`!banphone <numero>\` 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso
-• \`!sblocconumero <numero>\` ✅ - Rimuove il numero dalla blacklist permanente
-• \`!masskick\` (o \`!svuotagruppo\`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
-• \`!deletegroup\` (o \`!eliminagruppo\`) 🗑 - Svuota ed elimina o abbandona il gruppo
-• \`!clearalltesto [parola]\` 🔍 - Elimina per tutti i messaggi con la parola indicata
-• \`!clearsender @utente\` (o \`!cleardue\`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
+- `!mute @utente` 🔇 - Muto perpetuo e cancellazione automatica messaggi
+- `!unmute @utente` 🔊 - Revoca il muto perpetuo
+- `!warn @utente` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
+- `!kick @utente` (o `!rimuovi`) ❌ - Rimuove ed espelle immediatamente l'utente
+- `!banphone <numero>` 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso
+- `!sblocconumero <numero>` ✅ - Rimuove il numero dalla blacklist permanente
+- `!masskick` (o `!svuotagruppo`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
+- `!deletegroup` (o `!eliminagruppo`) 🗑 - Svuota ed elimina o abbandona il gruppo
+- `!clearalltesto [parola]` 🔍 - Elimina per tutti i messaggi con la parola indicata
+- `!clearsender @utente` (o `!cleardue`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
 🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
-• \`!setgeminiak [chiave]\` 🔑 - Imposta la chiave API direttamente in chat privata
-• \`!parla [domanda]\` (o \`!ia [domanda]\`) 💡 - Chatta direttamente con le API Cloud di Ollama
-• \`!cerca [query]\` (o \`!web [query]\`) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
+- `!setgeminiak [chiave]` 🔑 - Imposta la chiave API direttamente in chat privata
+- `!parla [domanda]` (o `!ia [domanda]`) 💡 - Chatta direttamente con le API Cloud di Ollama
+- `!cerca [query]` (o `!web [query]`) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
 
 ⚙️ **GESTIONE AMMINISTRATORI**
-• \`!promuovi @utente\` ⭐ - Promuove l'utente amministratore
-• \`!demuovi @utente\` (o \`!quickdemote\`) 👤 - Rimuove subito i poteri di admin
-• \`!multidemote @u1 @u2...\` 👥 - Rimuove i poteri di admin a più utenti insieme
+- `!promuovi @utente` ⭐ - Promuove l'utente amministratore
+- `!demuovi @utente` (o `!quickdemote`) 👤 - Rimuove subito i poteri di admin
+- `!multidemote @u1 @u2...` 👥 - Rimuove i poteri di admin a più utenti insieme
 
 ⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
-• \`!checkadmin\` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
-• \`!gruppo on/off\` 🤖 - Attiva/disattiva il bot nel gruppo
-• \`!editgroup on/off\` ✏ - Gestisce la modifica info gruppo
-• \`!approva on/off\` 📋 - Gestisce approvazione nuovi membri
-• \`!addmember on/off\` ➕ - Gestisce restrizione aggiunta partecipanti
-• \`!history on/off\` 📜 - Invio cronologia messaggi ai nuovi membri
-• \`!invitelink on/off\` 🔗 - Accesso tramite link d'invito
-• \`!setname [nome]\` 🏷 - Cambia istantaneamente il nome del gruppo
-• \`!lockinfo\` / \`!unlockinfo\` 🔒 - Blocca o sblocca i dettagli del gruppo
-• \`!link on/off\` 🌐 - Cancellazione automatica link esterni
-• \`!antiphoto on/off\` 📸 - Blocco automatico foto non autorizzate
-• \`!cooldown on/off\` ⏱ - Limite tempo antispam tra comandi
+- `!checkadmin` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
+- `!gruppo on/off` 🤖 - Attiva/disattiva il bot nel gruppo
+- `!editgroup on/off` ✏ - Gestisce la modifica info gruppo
+- `!approva on/off` 📋 - Gestisce approvazione nuovi membri
+- `!addmember on/off` ➕ - Gestisce restrizione aggiunta partecipanti
+- `!history on/off` 📜 - Invio cronologia messaggi ai nuovi membri
+- `!invitelink on/off` 🔗 - Accesso tramite link d'invito
+- `!setname [nome]` 🏷 - Cambia istantaneamente il nome del gruppo
+- `!lockinfo` / `!unlockinfo` 🔒 - Blocca o sblocca i dettagli del gruppo
+- `!link on/off` 🌐 - Cancellazione automatica link esterni
+- `!antiphoto on/off` 📸 - Blocco automatico foto non autorizzate
+- `!cooldown on/off` ⏱ - Limite tempo antispam tra comandi
+
+🆔 **IDENTIFICAZIONE CHAT (JID)**
+- `!getjid` 📌 - Mostra il JID unico della chat corrente (utente o gruppo)
+- `!getjid gruppo [nome]` 📋 - Cerca e mostra i JID di tutti i gruppi (o filtra per nome)
 
 💬 **SUPPORTO E BENVENUTO**
-• \`!commands\` (o \`!aiuto\` / \`!menu\`) 📖 - Mostra questo menu comandi
-• \`!chiedialessio [mess]\` ✉️ - Invia una domanda diretta al supporto
-• \`!tagall\` (o \`!tutti\`) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
-• \`!poll [domanda] [opz 1] [opz 2]\` 📊 - Sondaggio interattivo
-• \`!welcome on/off 👋\` - Gestisce il benvenuto automatico
-• \`!ripeti [messaggio] [numero]\` (o \`!flood\`) 🔁 - Ripete un messaggio più volte con etichetta progressiva
-• \`!clearmetutto\` (o \`!botclean\`) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
+- `!commands` (o `!aiuto` / `!menu`) 📖 - Mostra questo menu comandi
+- `!chiedialessio [mess]` ✉️ - Invia una domanda diretta al supporto
+- `!tagall` (o `!tutti`) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
+- `!poll [domanda] [opz 1] [opz 2]` 📊 - Sondaggio interattivo
+- `!welcome on/off 👋` - Gestisce il benvenuto automatico
+- `!ripeti [messaggio] [numero]` (o `!flood`) 🔁 - Ripete un messaggio più volte con etichetta progressiva
+- `!clearmetutto` (o `!botclean`) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
 
                 if (isOwner(sender, sock)) {
                     menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**
@@ -1163,5 +1167,72 @@ export async function handleGroupParticipantsUpdate(sock, update) {
                 }
             }
         }
+    }
+}
+
+if (command === '!getjid') {
+    const isGroup = chatId.endsWith('@g.us');
+
+    // CASO 1: L'utente scrive "!getjid gruppo ..." in chat privata (o in un gruppo)
+    if (args[0] && args[0].toLowerCase() === 'gruppo') {
+        try {
+            // Recupera la lista di tutti i gruppi in cui è presente il bot
+            const groups = await sock.groupFetchAllParticipating();
+            const groupList = Object.values(groups);
+
+            if (groupList.length === 0) {
+                await sock.sendMessage(chatId, { text: "❌ Il bot non è presente in alcun gruppo." });
+                return;
+            }
+
+            // Parole chiave cercate dall'utente (es. !getjid gruppo Famiglia Amici)
+            const searchTerms = args.slice(1).join(' ').toLowerCase().trim();
+
+            // Se l'utente ha specificato uno o più nomi dopo "gruppo"
+            if (searchTerms.length > 0) {
+                // Filtra i gruppi che contengono il nome cercato
+                const matchedGroups = groupList.filter(g => 
+                    g.subject.toLowerCase().includes(searchTerms)
+                );
+
+                if (matchedGroups.length === 0) {
+                    await sock.sendMessage(chatId, { 
+                        text: `❌ Nessun gruppo trovato corrispondente a: *"${searchTerms}"*` 
+                    });
+                    return;
+                }
+
+                let response = `🔍 *Risultati della ricerca per "${searchTerms}":*\n\n`;
+                matchedGroups.forEach((group, index) => {
+                    response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
+                });
+
+                await sock.sendMessage(chatId, { text: response });
+                return;
+            }
+
+            // Se ha scritto solo "!getjid gruppo", mostra tutti i gruppi
+            let response = "📋 *Lista di tutti i gruppi del bot:*\n\n";
+            groupList.forEach((group, index) => {
+                response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
+            });
+
+            await sock.sendMessage(chatId, { text: response });
+        } catch (error) {
+            console.error("Errore nel recupero dei gruppi:", error);
+            await sock.sendMessage(chatId, { text: "❌ Errore durante il recupero della lista dei gruppi." });
+        }
+        return;
+    }
+
+    // CASO 2: L'utente scrive solo "!getjid"
+    if (isGroup) {
+        await sock.sendMessage(chatId, { 
+            text: `📌 *ID di questo gruppo:* \`${chatId}\`` 
+        });
+    } else {
+        await sock.sendMessage(chatId, { 
+            text: `👤 *Il tuo ID (JID):* \`${chatId}\`\n\n💡 *Esempi di utilizzo:*\n• \`!getjid gruppo\` (Mostra tutti i gruppi)\n• \`!getjid gruppo NomeGruppo\` (Cerca un gruppo per nome)` 
+        });
     }
 }
