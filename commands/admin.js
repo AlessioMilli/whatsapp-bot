@@ -367,14 +367,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Estrae il testo dopo il comando
                 const content = messageText.replace(/^(?:!aggiungicomando|!addcmd|!nuovocomando)/i, '').trim();
                 const parts = content.split(/\s+/);
                 
                 let newCmd = parts[0] ? parts[0].toLowerCase() : "";
                 let responseText = parts.slice(1).join(' ').trim();
 
-                // Se non viene specificato il comando o il testo, il bot inventa tutto da solo
                 if (!newCmd || !newCmd.startsWith('!') || !responseText) {
                     const randomNum = Math.floor(Math.random() * 1000);
                     newCmd = `!comando_${randomNum}`;
@@ -387,6 +385,30 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 await sock.sendMessage(chatJid, { 
                     text: `✅ **Comando aggiunto con successo!**\n\n• **Comando:** \`${newCmd}\`\n• **Risposta:** ${responseText}\n\nIl comando è stato integrato nel database locale e salvato permanentemente.` 
                 });
+                return true;
+            }
+
+            case '!rimuovicomando':
+            case '!delcmd':
+            case '!eliminacomando': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato al proprietario." });
+                    return true;
+                }
+
+                const targetCmd = args[1] ? args[1].toLowerCase() : "";
+                if (!targetCmd) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Specifica il comando da rimuovere.\nEsempio: `!rimuovicomando !regole`" });
+                    return true;
+                }
+
+                if (customCommands.has(targetCmd)) {
+                    customCommands.delete(targetCmd);
+                    saveCustomCommands();
+                    await sock.sendMessage(chatJid, { text: `✅ Il comando \`${targetCmd}\` è stato rimosso con successo dal database.` });
+                } else {
+                    await sock.sendMessage(chatJid, { text: `⚠️ Il comando \`${targetCmd}\` non esiste tra i comandi personalizzati.` });
+                }
                 return true;
             }
 
@@ -571,7 +593,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !getjid gruppo [nome] 📋 - Cerca JID gruppi
 - !getjid numero <num> / !getjid utente <nome> / !getjid @utente 👤 - Cerca JID utente
 - !aggiornacodice (o !reload) 🔄 - Salva e aggiorna le protezioni e lo stato del bot
-- !aggiungicomando [!cmd] [testo] ➕ - Aggiunge un comando personalizzato (o inventato dal bot se lasciato vuoto)
+- !aggiungicomando [!cmd] [testo] ➕ - Aggiunge un comando personalizzato
+- !rimuovicomando [!cmd] 🗑️ - Rimuove un comando personalizzato
 
 💬 SUPPORTO E BENVENUTO
 - !commands (o !aiuto / !menu) 📖 - Mostra questo menu comandi
