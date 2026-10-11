@@ -3,6 +3,7 @@ import fs from 'fs';
 
 // 📂 Percorso e funzioni per la Blacklist Telefonica Permanente
 const PHONE_BLACKLIST_FILE = './phone_blacklist.json';
+const STATE_FILE = './bot_state.json';
 
 function loadPhoneBlacklist() {
     if (!fs.existsSync(PHONE_BLACKLIST_FILE)) return [];
@@ -66,6 +67,44 @@ function getGroupConfig(chatJid) {
 // Il tuo numero impostato per il bot
 let OWNER_JID = "393534467571@s.whatsapp.net";
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
+
+// Caricamento dello stato salvato (protezioni e co-owner) se esiste
+if (fs.existsSync(STATE_FILE)) {
+    try {
+        const savedState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+        if (savedState.extraOwners) {
+            savedState.extraOwners.forEach(id => global.extraOwners.add(id));
+        }
+        if (savedState.groupsConfig) {
+            for (let [gId, gConf] of Object.entries(savedState.groupsConfig)) {
+                let conf = getGroupConfig(gId);
+                if (gConf.protectedUsers) {
+                    conf.protectedUsers = new Set(gConf.protectedUsers);
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Errore nel caricamento dello stato salvato:", e);
+    }
+}
+
+// Funzione per salvare lo stato persistente
+function saveBotState() {
+    try {
+        const stateObj = {
+            extraOwners: Array.from(global.extraOwners),
+            groupsConfig: {}
+        };
+        for (let [gId, conf] of groupsConfig.entries()) {
+            stateObj.groupsConfig[gId] = {
+                protectedUsers: Array.from(conf.protectedUsers)
+            };
+        }
+        fs.writeFileSync(STATE_FILE, JSON.stringify(stateObj, null, 2));
+    } catch (e) {
+        console.error("Errore nel salvataggio dello stato:", e);
+    }
+}
 
 const isOwner = (jid, sock) => {
     return jid === OWNER_JID || global.extraOwners.has(jid) || jid === sock?.user?.id;
@@ -285,10 +324,21 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         switch (command) {
+            case '!aggiornacodice':
+            case '!ricarica':
+            case '!reload': {
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato al proprietario." });
+                    return true;
+                }
+                saveBotState();
+                await sock.sendMessage(chatJid, { text: "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni attuali, gli ID e i co-owner sono stati salvati permanentemente nel database locale." });
+                return true;
+            }
+
             case '!getjid': {
                 const isGroup = chatJid.endsWith('@g.us');
 
-                // CASO 1: L'utente scrive "!getjid gruppo ..." in chat privata (o in un gruppo)
                 if (args[1] && args[1].toLowerCase() === 'gruppo') {
                     try {
                         const groups = await sock.groupFetchAllParticipating();
@@ -335,14 +385,74 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // CASO 2: L'utente scrive solo "!getjid"
+                if ((args[1] && ['utente', 'numero'].includes(args[1].toLowerCase())) || targetMention) {
+                    try {
+                        if (targetMention) {
+                            await sock.sendMessage(chatJid, { 
+                                text: `👤 *JID dell'utente taggato:* \`${targetMention}\``,
+                                mentions: [targetMention]
+                            });
+                            return true;
+                        }
+
+                        const searchType = args[1].toLowerCase();
+                        const userQuery = args.slice(2).join(' ').replace(/[^0-9a-zA-Z]/g, '').trim();
+                        
+                        if (!userQuery) {
+                            await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567`" });
+                            return true;
+                        }
+
+                        const groups = await sock.groupFetchAllParticipating();
+                        let foundUsers = [];
+
+                        for (let gId in groups) {
+                            try {
+                                const metadata = await sock.groupMetadata(gId);
+                                for (let p of metadata.participants) {
+                                    let phoneClean = p.id.replace(/[^0-9]/g, '');
+                                    if (searchType === 'numero') {
+                                        if (phoneClean.includes(userQuery)) {
+                                            if (!foundUsers.some(u => u.id === p.id)) {
+                                                foundUsers.push({ id: p.id, groupName: metadata.subject });
+                                            }
+                                        }
+                                    } else {
+                                        if (p.id.toLowerCase().includes(userQuery.toLowerCase())) {
+                                            if (!foundUsers.some(u => u.id === p.id)) {
+                                                foundUsers.push({ id: p.id, groupName: metadata.subject });
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (e) {}
+                        }
+
+                        if (foundUsers.length === 0) {
+                            await sock.sendMessage(chatJid, { text: `❌ Nessun utente trovato per: *"${userQuery}"* nei gruppi del bot.` });
+                            return true;
+                        }
+
+                        let resText = `🔍 *Risultati ricerca per "${userQuery}":*\n\n`;
+                        foundUsers.slice(0, 10).forEach((u, i) => {
+                            resText += `${i + 1}. JID: \`${u.id}\`\n   Gruppo: ${u.groupName}\n\n`;
+                        });
+
+                        await sock.sendMessage(chatJid, { text: resText });
+                    } catch (err) {
+                        console.error("Errore ricerca utente/numero:", err);
+                        await sock.sendMessage(chatJid, { text: "❌ Errore durante la ricerca." });
+                    }
+                    return true;
+                }
+
                 if (isGroup) {
                     await sock.sendMessage(chatJid, { 
                         text: `📌 *ID di questo gruppo:* \`${chatJid}\`` 
                     });
                 } else {
                     await sock.sendMessage(chatJid, { 
-                        text: `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• !getjid gruppo (Mostra tutti i gruppi)\n• !getjid gruppo NomeGruppo (Cerca un gruppo per nome)` 
+                        text: `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• !getjid gruppo\n• !getjid numero <num>\n• !getjid utente <nome>\n• !getjid @utente` 
                     });
                 }
                 return true;
@@ -389,9 +499,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !antiphoto on/off 📸 - Blocco automatico foto non autorizzate
 - !cooldown on/off ⏱ - Limite tempo antispam tra comandi
 
-🆔 IDENTIFICAZIONE CHAT (JID)
-- !getjid 📌 - Mostra il JID unico della chat corrente (utente o gruppo)
-- !getjid gruppo [nome] 📋 - Cerca e mostra i JID di tutti i gruppi (o filtra per nome)
+🆔 IDENTIFICAZIONE CHAT (JID) & AGGIORNAMENTO
+- !getjid 📌 - Mostra il JID unico della chat corrente
+- !getjid gruppo [nome] 📋 - Cerca JID gruppi
+- !getjid numero <num> / !getjid utente <nome> / !getjid @utente 👤 - Cerca JID utente
+- !aggiornacodice (o !reload) 🔄 - Salva e aggiorna le protezioni e lo stato del bot
 
 💬 SUPPORTO E BENVENUTO
 - !commands (o !aiuto / !menu) 📖 - Mostra questo menu comandi
@@ -1014,9 +1126,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 global.extraOwners.add(targetMention);
                 config.protectedUsers.add(targetMention);
+                saveBotState();
 
                 await sock.sendMessage(chatJid, { 
-                    text: `👑 L'amico è stato aggiunto con successo tra i co-owner del bot ed è ora protetto!`, 
+                    text: `👑 L'amico è stato aggiunto con successo tra i co-owner del bot ed è ora protetto! (Stato salvato).`, 
                     mentions: [targetMention] 
                 });
                 return true;
@@ -1037,9 +1150,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 global.extraOwners.delete(targetMention);
                 config.protectedUsers.delete(targetMention);
+                saveBotState();
 
                 await sock.sendMessage(chatJid, { 
-                    text: `🛡 L'amico è stato rimosso dai co-owner del bot.`, 
+                    text: `🛡 L'amico è stato rimosso dai co-owner del bot. (Stato aggiornato).`, 
                     mentions: [targetMention] 
                 });
                 return true;
@@ -1069,14 +1183,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     if (action === 'on') {
                         if (targetMention) {
                             config.protectedUsers.add(targetMention);
-                            await sock.sendMessage(chatJid, { text: `Utente protetto con successo in questo gruppo.`, mentions: [targetMention] });
+                            saveBotState();
+                            await sock.sendMessage(chatJid, { text: `Utente protetto con successo in questo gruppo e salvato.`, mentions: [targetMention] });
                         } else {
                             config.protectionEnabled = true;
                             await sock.sendMessage(chatJid, { text: `Protezione avanzata attiva.` });
                         }
                     } else if (action === 'off') {
                         config.protectionEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⚠ Protezione disattivata." });
+                        if (targetMention) {
+                            config.protectedUsers.delete(targetMention);
+                            saveBotState();
+                        }
+                        await sock.sendMessage(chatJid, { text: "⚠ Protezione disattivata o utente rimosso dalle protezioni." });
                     }
                 }
                 return true;
