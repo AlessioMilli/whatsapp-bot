@@ -285,6 +285,69 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         switch (command) {
+            case '!getjid': {
+                const isGroup = chatJid.endsWith('@g.us');
+
+                // CASO 1: L'utente scrive "!getjid gruppo ..." in chat privata (o in un gruppo)
+                if (args[1] && args[1].toLowerCase() === 'gruppo') {
+                    try {
+                        const groups = await sock.groupFetchAllParticipating();
+                        const groupList = Object.values(groups);
+
+                        if (groupList.length === 0) {
+                            await sock.sendMessage(chatJid, { text: "❌ Il bot non è presente in alcun gruppo." });
+                            return true;
+                        }
+
+                        const searchTerms = args.slice(2).join(' ').toLowerCase().trim();
+
+                        if (searchTerms.length > 0) {
+                            const matchedGroups = groupList.filter(g => 
+                                g.subject.toLowerCase().includes(searchTerms)
+                            );
+
+                            if (matchedGroups.length === 0) {
+                                await sock.sendMessage(chatJid, { 
+                                    text: `❌ Nessun gruppo trovato corrispondente a: *"${searchTerms}"*` 
+                                });
+                                return true;
+                            }
+
+                            let response = `🔍 *Risultati della ricerca per "${searchTerms}":*\n\n`;
+                            matchedGroups.forEach((group, index) => {
+                                response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
+                            });
+
+                            await sock.sendMessage(chatJid, { text: response });
+                            return true;
+                        }
+
+                        let response = "📋 *Lista di tutti i gruppi del bot:*\n\n";
+                        groupList.forEach((group, index) => {
+                            response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
+                        });
+
+                        await sock.sendMessage(chatJid, { text: response });
+                    } catch (error) {
+                        console.error("Errore nel recupero dei gruppi:", error);
+                        await sock.sendMessage(chatJid, { text: "❌ Errore durante il recupero della lista dei gruppi." });
+                    }
+                    return true;
+                }
+
+                // CASO 2: L'utente scrive solo "!getjid"
+                if (isGroup) {
+                    await sock.sendMessage(chatJid, { 
+                        text: `📌 *ID di questo gruppo:* \`${chatJid}\`` 
+                    });
+                } else {
+                    await sock.sendMessage(chatJid, { 
+                        text: `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• \`!getjid gruppo\` (Mostra tutti i gruppi)\n• \`!getjid gruppo NomeGruppo\` (Cerca un gruppo per nome)` 
+                    });
+                }
+                return true;
+            }
+
             case '!commands':
             case '!aiuto':
             case '!menu': {
@@ -1167,72 +1230,5 @@ export async function handleGroupParticipantsUpdate(sock, update) {
                 }
             }
         }
-    }
-}
-
-if (command === '!getjid') {
-    const isGroup = chatId.endsWith('@g.us');
-
-    // CASO 1: L'utente scrive "!getjid gruppo ..." in chat privata (o in un gruppo)
-    if (args[0] && args[0].toLowerCase() === 'gruppo') {
-        try {
-            // Recupera la lista di tutti i gruppi in cui è presente il bot
-            const groups = await sock.groupFetchAllParticipating();
-            const groupList = Object.values(groups);
-
-            if (groupList.length === 0) {
-                await sock.sendMessage(chatId, { text: "❌ Il bot non è presente in alcun gruppo." });
-                return;
-            }
-
-            // Parole chiave cercate dall'utente (es. !getjid gruppo Famiglia Amici)
-            const searchTerms = args.slice(1).join(' ').toLowerCase().trim();
-
-            // Se l'utente ha specificato uno o più nomi dopo "gruppo"
-            if (searchTerms.length > 0) {
-                // Filtra i gruppi che contengono il nome cercato
-                const matchedGroups = groupList.filter(g => 
-                    g.subject.toLowerCase().includes(searchTerms)
-                );
-
-                if (matchedGroups.length === 0) {
-                    await sock.sendMessage(chatId, { 
-                        text: `❌ Nessun gruppo trovato corrispondente a: *"${searchTerms}"*` 
-                    });
-                    return;
-                }
-
-                let response = `🔍 *Risultati della ricerca per "${searchTerms}":*\n\n`;
-                matchedGroups.forEach((group, index) => {
-                    response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
-                });
-
-                await sock.sendMessage(chatId, { text: response });
-                return;
-            }
-
-            // Se ha scritto solo "!getjid gruppo", mostra tutti i gruppi
-            let response = "📋 *Lista di tutti i gruppi del bot:*\n\n";
-            groupList.forEach((group, index) => {
-                response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
-            });
-
-            await sock.sendMessage(chatId, { text: response });
-        } catch (error) {
-            console.error("Errore nel recupero dei gruppi:", error);
-            await sock.sendMessage(chatId, { text: "❌ Errore durante il recupero della lista dei gruppi." });
-        }
-        return;
-    }
-
-    // CASO 2: L'utente scrive solo "!getjid"
-    if (isGroup) {
-        await sock.sendMessage(chatId, { 
-            text: `📌 *ID di questo gruppo:* \`${chatId}\`` 
-        });
-    } else {
-        await sock.sendMessage(chatId, { 
-            text: `👤 *Il tuo ID (JID):* \`${chatId}\`\n\n💡 *Esempi di utilizzo:*\n• \`!getjid gruppo\` (Mostra tutti i gruppi)\n• \`!getjid gruppo NomeGruppo\` (Cerca un gruppo per nome)` 
-        });
     }
 }
