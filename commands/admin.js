@@ -342,7 +342,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     });
                 } else {
                     await sock.sendMessage(chatJid, { 
-                        text: `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• \`!getjid gruppo\` (Mostra tutti i gruppi)\n• \`!getjid gruppo NomeGruppo\` (Cerca un gruppo per nome)` 
+                        text: `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• !getjid gruppo (Mostra tutti i gruppi)\n• !getjid gruppo NomeGruppo (Cerca un gruppo per nome)` 
                     });
                 }
                 return true;
@@ -351,61 +351,59 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!commands':
             case '!aiuto':
             case '!menu': {
-                let menuText = `📋 **LISTA COMPLETA DEI COMANDI DEL BOT**
+                let menuText = `📋 LISTA COMPLETA DEI COMANDI DEL BOT
 
-🛑 **GESTIONE MODERAZIONE E SANZIONI**
-- `!mute @utente` 🔇 - Muto perpetuo e cancellazione automatica messaggi
-- `!unmute @utente` 🔊 - Revoca il muto perpetuo
-- `!warn @utente` ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
-- `!kick @utente` (o `!rimuovi`) ❌ - Rimuove ed espelle immediatamente l'utente
-- `!banphone <numero>` 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso
-- `!sblocconumero <numero>` ✅ - Rimuove il numero dalla blacklist permanente
-- `!masskick` (o `!svuotagruppo`) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
-- `!deletegroup` (o `!eliminagruppo`) 🗑 - Svuota ed elimina o abbandona il gruppo
-- `!clearalltesto [parola]` 🔍 - Elimina per tutti i messaggi con la parola indicata
-- `!clearsender @utente` (o `!cleardue`) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
+🛑 GESTIONE MODERAZIONE E SANZIONI
+- !mute @utente 🔇 - Muto perpetuo e cancellazione automatica messaggi
+- !unmute @utente 🔊 - Revoca il muto perpetuo
+- !warn @utente ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
+- !kick @utente (o !rimuovi) ❌ - Rimuove ed espelle immediatamente l'utente
+- !banphone <numero> 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso
+- !sblocconumero <numero> ✅ - Rimuove il numero dalla blacklist permanente
+- !masskick (o !svuotagruppo) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
+- !deletegroup (o !eliminagruppo) 🗑 - Svuota ed elimina o abbandona il gruppo
+- !clearalltesto [parola] 🔍 - Elimina per tutti i messaggi con la parola indicata
+- !clearsender @utente (o !cleardue) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
-🤖 **INTELLIGENZA ARTIFICIALE & SENTINELLA**
-- `!setgeminiak [chiave]` 🔑 - Imposta la chiave API direttamente in chat privata
-- `!parla [domanda]` (o `!ia [domanda]`) 💡 - Chatta direttamente con le API Cloud di Ollama
-- `!cerca [query]` (o `!web [query]`) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
+🤖 INTELLIGENZA ARTIFICIALE & SENTINELLA
+- !setgeminiak [chiave] 🔑 - Imposta la chiave API direttamente in chat privata
+- !parla [domanda] (o !ia [domanda]) 💡 - Chatta direttamente con le API Cloud di Ollama
+- !cerca [query] (o !web [query]) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
 
-⚙️ **GESTIONE AMMINISTRATORI**
-- `!promuovi @utente` ⭐ - Promuove l'utente amministratore
-- `!demuovi @utente` (o `!quickdemote`) 👤 - Rimuove subito i poteri di admin
-- `!multidemote @u1 @u2...` 👥 - Rimuove i poteri di admin a più utenti insieme
+⚙️ GESTIONE AMMINISTRATORI
+- !promuovi @utente ⭐ - Promuove l'utente amministratore
+- !demuovi @utente (o !quickdemote) 👤 - Rimuove subito i poteri di admin
+- !multidemote @u1 @u2... 👥 - Rimuove i poteri di admin a più utenti insieme
 
-⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**
-- `!checkadmin` 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
-- `!gruppo on/off` 🤖 - Attiva/disattiva il bot nel gruppo
-- `!editgroup on/off` ✏ - Gestisce la modifica info gruppo
-- `!approva on/off` 📋 - Gestisce approvazione nuovi membri
-- `!addmember on/off` ➕ - Gestisce restrizione aggiunta partecipanti
-- `!history on/off` 📜 - Invio cronologia messaggi ai nuovi membri
-- `!invitelink on/off` 🔗 - Accesso tramite link d'invito
-- `!setname [nome]` 🏷 - Cambia istantaneamente il nome del gruppo
-- `!lockinfo` / `!unlockinfo` 🔒 - Blocca o sblocca i dettagli del gruppo
-- `!link on/off` 🌐 - Cancellazione automatica link esterni
-- `!antiphoto on/off` 📸 - Blocco automatico foto non autorizzate
-- `!cooldown on/off` ⏱ - Limite tempo antispam tra comandi
+⚙️ IMPOSTAZIONI E SICUREZZA GRUPPO
+- !checkadmin 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
+- !gruppo on/off 🤖 - Attiva/disattiva il bot nel gruppo
+- !editgroup on/off ✏ - Gestisce la modifica info gruppo
+- !approva on/off 📋 - Gestisce approvazione nuovi membri
+- !addmember on/off ➕ - Gestisce restrizione aggiunta partecipanti
+- !history on/off 📜 - Invio cronologia messaggi ai nuovi membri
+- !invitelink on/off 🔗 - Accesso tramite link d'invito
+- !setname [nome] 🏷 - Cambia istantaneamente il nome del gruppo
+- !lockinfo / !unlockinfo 🔒 - Blocca o sblocca i dettagli del gruppo
+- !link on/off 🌐 - Cancellazione automatica link esterni
+- !antiphoto on/off 📸 - Blocco automatico foto non autorizzate
+- !cooldown on/off ⏱ - Limite tempo antispam tra comandi
 
-🆔 **IDENTIFICAZIONE CHAT (JID)**
-- `!getjid` 📌 - Mostra il JID unico della chat corrente (utente o gruppo)
-- `!getjid gruppo [nome]` 📋 - Cerca e mostra i JID di tutti i gruppi (o filtra per nome)
+🆔 IDENTIFICAZIONE CHAT (JID)
+- !getjid 📌 - Mostra il JID unico della chat corrente (utente o gruppo)
+- !getjid gruppo [nome] 📋 - Cerca e mostra i JID di tutti i gruppi (o filtra per nome)
 
-💬 **SUPPORTO E BENVENUTO**
-- `!commands` (o `!aiuto` / `!menu`) 📖 - Mostra questo menu comandi
-- `!chiedialessio [mess]` ✉️ - Invia una domanda diretta al supporto
-- `!tagall` (o `!tutti`) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
-- `!poll [domanda] [opz 1] [opz 2]` 📊 - Sondaggio interattivo
-- `!welcome on/off 👋` - Gestisce il benvenuto automatico
-- `!ripeti [messaggio] [numero]` (o `!flood`) 🔁 - Ripete un messaggio più volte con etichetta progressiva
-- `!clearmetutto` (o `!botclean`) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
+💬 SUPPORTO E BENVENUTO
+- !commands (o !aiuto / !menu) 📖 - Mostra questo menu comandi
+- !chiedialessio [mess] ✉️ - Invia una domanda diretta al supporto
+- !tagall (o !tutti) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
+- !poll [domanda] [opz 1] [opz 2] 📊 - Sondaggio interattivo
+- !welcome on/off 👋 - Gestisce il benvenuto automatico
+- !ripeti [messaggio] [numero] (o !flood) 🔁 - Ripete un messaggio più volte con etichetta progressiva
+- !clearmetutto (o !botclean) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
 
                 if (isOwner(sender, sock)) {
-                    menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**
-1. \`!inspect @utente\` 🔍 - Mostra la scheda informativa dell'utente nel database
-2. \`!lockgroup\` / \`!unlockgroup\``;
+                    menuText += `\n\n🚀 COMANDI ESCLUSIVI OWNER\n1. !inspect @utente 🔍 - Mostra la scheda informativa dell'utente nel database\n2. !lockgroup / !unlockgroup`;
                 }
 
                 await sock.sendMessage(chatJid, { text: menuText });
@@ -427,7 +425,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const newKey = messageText.replace(/^(?:!setgeminiak|!setapi)/i, '').trim();
 
                 if (!newKey) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci la chiave API dopo il comando.\nEsempio: `!setgeminiak la_tua_chiave_qui`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci la chiave API dopo il comando.\nEsempio: !setgeminiak la_tua_chiave_qui" });
                     return true;
                 }
 
@@ -452,7 +450,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const targetPhone = args[1]?.replace(/[^0-9]/g, '');
                 if (!targetPhone) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido.\nEsempio: `!banphone 393331234567`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido.\nEsempio: !banphone 393331234567" });
                     return true;
                 }
 
@@ -485,7 +483,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const targetPhone = args[1]?.replace(/[^0-9]/g, '');
                 if (!targetPhone) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il numero da sbloccare.\nEsempio: `!sblocconumero 393331234567`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il numero da sbloccare.\nEsempio: !sblocconumero 393331234567" });
                     return true;
                 }
 
@@ -507,13 +505,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const userQuery = messageText.replace(/^(?:!parla|!ia)/i, '').trim();
                 
                 if (!userQuery) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi una domanda o un argomento dopo il comando.\nEsempio: `!parla cos'è un buco nero?`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi una domanda o un argomento dopo il comando.\nEsempio: !parla cos'è un buco nero?" });
                     return true;
                 }
 
                 const OLLAMA_API_KEY = getApiKey();
                 if (!OLLAMA_API_KEY) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando `!setgeminiak <tua_chiave>` per sbloccare l'IA." });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare l'IA." });
                     return true;
                 }
 
@@ -563,13 +561,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const searchQuery = messageText.replace(/^(?:!cerca|!web)/i, '').trim();
 
                 if (!searchQuery) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci cosa desideri cercare.\nEsempio: `!cerca quando è nato lyon wgf`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci cosa desideri cercare.\nEsempio: !cerca quando è nato lyon wgf" });
                     return true;
                 }
 
                 const OLLAMA_API_KEY = getApiKey();
                 if (!OLLAMA_API_KEY) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando `!setgeminiak <tua_chiave>` per sbloccare la ricerca." });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare la ricerca." });
                     return true;
                 }
 
@@ -621,7 +619,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const inputArgs = messageText.replace(/^(?:!ripeti|!flood)/i, '').trim().split(/\s+/);
                 
                 if (inputArgs.length < 2) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Uso corretto: `!ripeti [il tuo messaggio] [numero di volte]`\nEsempio: `!ripeti Ciao a tutti 5`" });
+                    await sock.sendMessage(chatJid, { text: "⚠️ Uso corretto: !ripeti [il tuo messaggio] [numero di volte]\nEsempio: !ripeti Ciao a tutti 5" });
                     return true;
                 }
 
@@ -655,7 +653,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: `!clearsender @utente`" });
+                    await sock.sendMessage(chatJid, { text: "⚠ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: !clearsender @utente" });
                     return true;
                 }
 
