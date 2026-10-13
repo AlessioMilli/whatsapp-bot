@@ -600,6 +600,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !aggiornacodice (o !reload) 🔄 - Salva e aggiorna le protezioni e lo stato del bot
 - !aggiungicomando [!cmd] [testo] ➕ - Aggiunge un comando personalizzato
 - !rimuovicomando [!cmd] 🗑️ - Rimuove un comando personalizzato
+- !cleandb 🗄️ - Pulisce e azzera il database degli avvertimenti
 
 💬 SUPPORTO E BENVENUTO
 - !commands (o !aiuto / !menu) 📖 - Mostra questo menu comandi
