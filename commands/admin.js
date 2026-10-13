@@ -83,7 +83,7 @@ function getGroupConfig(chatJid) {
             waitingForSetName: new Set(),
             isInactive: false,
             isLocked: false,
-            onlyAdminMode: false, // 🔒 Nuova impostazione per risposte riservate agli admin
+            onlyAdminMode: false, // 🔒 Riservato solo agli admin se attivo
             welcomeEnabled: true,
             protectionEnabled: true,
             offlineMode: false,
@@ -138,12 +138,20 @@ function saveBotState() {
 }
 
 const isOwner = (jid, sock) => {
-    return jid === OWNER_JID || global.extraOwners.has(jid) || jid === sock?.user?.id;
+    if (!jid) return false;
+    const cleanJid = jid.replace(/[^0-9]/g, '');
+    const cleanOwner = OWNER_JID.replace(/[^0-9]/g, '');
+    if (cleanJid === cleanOwner) return true;
+    for (let extra of global.extraOwners) {
+        if (extra.replace(/[^0-9]/g, '') === cleanJid) return true;
+    }
+    if (sock?.user?.id && sock.user.id.replace(/[^0-9]/g, '') === cleanJid) return true;
+    return false;
 };
 
 // Funzione di protezione aggiornata: il proprietario e gli extraOwners sono protetti SEMPRE
 const isProtected = (jid, config) => {
-    return jid === OWNER_JID || global.extraOwners.has(jid) || config.protectedUsers.has(jid);
+    return isOwner(jid) || config.protectedUsers.has(jid);
 };
 
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
@@ -299,15 +307,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         if (!messageText) return false;
 
-        const args = messageText.trim().split(/ +/);
-        const command = args[0].toLowerCase();
-        const targetMention = getTargetJid();
-
-        // 🔒 CONTROLLO MODALITÀ SOLO ADMIN (Se attiva, risponde solo agli admin o all'owner)
+        // 🔒 CONTROLLO RIGIDO E INMANDABILE PER LA MODALITÀ ONLY ADMIN
         if (isGroup && config.onlyAdminMode && messageText.startsWith('!') && !isOwner(sender, sock)) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
-                const participant = metadata.participants.find(p => p.id === sender);
+                const senderNumber = sender.replace(/[^0-9]/g, '');
+                
+                // Cerca se l'utente è registrato tra gli admin
+                const participant = metadata.participants.find(p => p.id.replace(/[^0-9]/g, '') === senderNumber);
                 const isUserAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
 
                 if (!isUserAdmin) {
@@ -315,12 +322,16 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         text: `⚠️ In questo gruppo la gestione dei comandi del bot è riservata unicamente agli **amministratori**.`,
                         mentions: [sender]
                     });
-                    return true;
+                    return true; // Blocca categoricamente prima dello switch comandi
                 }
             } catch (e) {
                 console.error("Errore verifica admin per onlyAdminMode:", e);
             }
         }
+
+        const args = messageText.trim().split(/ +/);
+        const command = args[0].toLowerCase();
+        const targetMention = getTargetJid();
 
         // 🧠 Controllo se è un comando personalizzato dinamico salvato nel database
         if (customCommands.has(command)) {
@@ -332,9 +343,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup && config.isInactive) {
             if (command === '!gruppo' && args[1] === 'on' && isOwner(sender, sock)) {
                 config.isInactive = false;
-                // Lasciamo proseguire per eseguire il comando !gruppo on
             } else {
-                // Se il bot è inattivo in questo gruppo, rispondi SOLO se a scrivere è il proprietario
                 if (!isOwner(sender, sock)) {
                     return false;
                 }
@@ -1472,13 +1481,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const action = args[1]?.toLowerCase();
                 const targetGroupArg = args[2] || args.slice(2).join(' ');
 
-                // Messaggio automatico aggiornato e pulito
                 const notificationText = 
                     `🤖 *NOTIFICA DI SISTEMA*\n\n` +
                     `Il bot è appena acceso ed è pronto all'uso! 🟢\n\n` +
                     `📌 *Regola di utilizzo:* Potete utilizzare liberamente i comandi del bot in questo gruppo. Divertitevi!`;
 
-                // Gestione da remoto tramite ID del gruppo
                 if (targetGroupArg && (action === 'off' || action === 'on')) {
                     let targetChatJid = targetGroupArg.trim();
                     if (!targetChatJid.endsWith('@g.us')) {
@@ -1497,7 +1504,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                // Gestione nel gruppo corrente
                 if (isGroup) {
                     if (action === 'off') {
                         config.isInactive = true;
