@@ -198,9 +198,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto
+        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto (tranne se a scrivere è il proprietario)
         const alehJid = "3924911895@s.whatsapp.net";
-        if (isGroup) {
+        if (isGroup && !isOwner(sender, sock)) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
                 const isAlehPresent = metadata.participants.some(p => p.id.includes(alehJid.split('@')[0]));
@@ -278,8 +278,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup && !m.key.fromMe) {
             const senderClean = sender.split('@')[0];
             if (mutedUsers.has(sender) || Array.from(mutedUsers).some(id => id.split('@')[0] === senderClean)) {
-                try { await sock.sendMessage(chatJid, { delete: m.key }); } catch (err) {}
-                return true;
+                if (!isOwner(sender, sock)) {
+                    try { await sock.sendMessage(chatJid, { delete: m.key }); } catch (err) {}
+                    return true;
+                }
             }
         }
 
@@ -308,10 +310,37 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup && config.isInactive) {
             if (command === '!gruppo' && args[1] === 'on' && isOwner(sender, sock)) {
                 config.isInactive = false;
-                await sock.sendMessage(chatJid, { text: "🤖 Il bot è di nuovo attivo in questo gruppo" });
-                return true;
+                // Lasciamo proseguire per eseguire il comando !gruppo on
+            } else {
+                // Se il bot è inattivo in questo gruppo:
+                if (!isOwner(sender, sock)) {
+                    // Se a scrivere è un utente normale e il messaggio inizia con '!', avvisalo
+                    if (messageText.startsWith('!')) {
+                        await sock.sendMessage(chatJid, { 
+                            text: `⚠️ Il bot è attualmente disattivato in questo gruppo e risponderà ai comandi unicamente quando Alessio disporrà dei privilegi di amministratore.`,
+                            mentions: [sender]
+                        });
+                    }
+                    return true;
+                }
             }
-            return false;
+        }
+
+        // 🔍 Controllo se l'utente digita un comando mentre il bot è attivo ma Alessio non è admin nel gruppo (controllo facoltativo sui metadati admin)
+        if (isGroup && messageText.startsWith('!') && !isOwner(sender, sock)) {
+            try {
+                const metadata = await sock.groupMetadata(chatJid);
+                const ownerPhone = OWNER_JID.split('@')[0];
+                const isAlessioAdmin = metadata.participants.some(p => p.id.includes(ownerPhone) && p.admin);
+
+                if (!isAlessioAdmin) {
+                    await sock.sendMessage(chatJid, { 
+                        text: `⚠️ Al momento non posso eseguire questo comando perché Alessio non dispone dei privilegi di amministratore in questo gruppo.`,
+                        mentions: [sender]
+                    });
+                    return true;
+                }
+            } catch (e) {}
         }
 
         if (config.cooldownEnabled && isGroup && !isOwner(sender, sock)) {
@@ -1409,6 +1438,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const action = args[1]?.toLowerCase();
                 const targetGroupArg = args[2] || args.slice(2).join(' ');
 
+                // Messaggio automatico pulito e professionale visibile a tutti
+                const notificationText = 
+                    `🤖 *NOTIFICA DI SISTEMA*\n\n` +
+                    `Il bot è stato appena riattivato in questo gruppo! 🟢\n\n` +
+                    `📌 *Regola di utilizzo:* È possibile interagire con i comandi e usufruire delle funzioni del bot unicamente se **Alessio** dispone dei privilegi di amministratore nel gruppo. In caso contrario, il bot rimarrà in ascolto senza rispondere ad alcun comando.`;
+
                 // Gestione da remoto tramite ID del gruppo
                 if (targetGroupArg && (action === 'off' || action === 'on')) {
                     let targetChatJid = targetGroupArg.trim();
@@ -1423,6 +1458,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     } else if (action === 'on') {
                         targetConfig.isInactive = false;
                         await sock.sendMessage(chatJid, { text: `🤖 Bot riattivato con successo nel gruppo con ID: \`${targetChatJid}\`` });
+                        await sock.sendMessage(targetChatJid, { text: notificationText });
                     }
                     return true;
                 }
@@ -1434,7 +1470,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         await sock.sendMessage(chatJid, { text: "🤖 Bot disattivato in questo specifico gruppo." });
                     } else if (action === 'on') {
                         config.isInactive = false;
-                        await sock.sendMessage(chatJid, { text: "🤖 Bot riattivato in questo specifico gruppo." });
+                        await sock.sendMessage(chatJid, { text: notificationText });
                     }
                 } else {
                     await sock.sendMessage(chatJid, { text: "⚠️ Per usare il comando qui, specifica l'azione e l'ID del gruppo.\nEsempio: `!gruppo off 120363000000000000@g.us`" });
