@@ -83,6 +83,7 @@ function getGroupConfig(chatJid) {
             waitingForSetName: new Set(),
             isInactive: false,
             isLocked: false,
+            onlyAdminMode: false, // 🔒 Nuova impostazione per risposte riservate agli admin
             welcomeEnabled: true,
             protectionEnabled: true,
             offlineMode: false,
@@ -96,7 +97,7 @@ function getGroupConfig(chatJid) {
 let OWNER_JID = "393534467571@s.whatsapp.net";
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
 
-// Caricamento dello stato salvato (protezioni e co-owner) se esiste
+// Caricamento dello stato salvato (protezioni, co-owner e impostazioni gruppo) se esiste
 if (fs.existsSync(STATE_FILE)) {
     try {
         const savedState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
@@ -106,6 +107,7 @@ if (fs.existsSync(STATE_FILE)) {
         if (savedState.groupsConfig) {
             for (let [gId, gConf] of Object.entries(savedState.groupsConfig)) {
                 let conf = getGroupConfig(gId);
+                conf.onlyAdminMode = gConf.onlyAdminMode || false;
                 if (gConf.protectedUsers) {
                     conf.protectedUsers = new Set(gConf.protectedUsers);
                 }
@@ -125,6 +127,7 @@ function saveBotState() {
         };
         for (let [gId, conf] of groupsConfig.entries()) {
             stateObj.groupsConfig[gId] = {
+                onlyAdminMode: conf.onlyAdminMode,
                 protectedUsers: Array.from(conf.protectedUsers)
             };
         }
@@ -300,6 +303,25 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         const command = args[0].toLowerCase();
         const targetMention = getTargetJid();
 
+        // 🔒 CONTROLLO MODALITÀ SOLO ADMIN (Se attiva, risponde solo agli admin o all'owner)
+        if (isGroup && config.onlyAdminMode && messageText.startsWith('!') && !isOwner(sender, sock)) {
+            try {
+                const metadata = await sock.groupMetadata(chatJid);
+                const participant = metadata.participants.find(p => p.id === sender);
+                const isUserAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
+
+                if (!isUserAdmin) {
+                    await sock.sendMessage(chatJid, { 
+                        text: `⚠️ In questo gruppo la gestione dei comandi del bot è riservata unicamente agli **amministratori**.`,
+                        mentions: [sender]
+                    });
+                    return true;
+                }
+            } catch (e) {
+                console.error("Errore verifica admin per onlyAdminMode:", e);
+            }
+        }
+
         // 🧠 Controllo se è un comando personalizzato dinamico salvato nel database
         if (customCommands.has(command)) {
             const customResponse = customCommands.get(command);
@@ -364,6 +386,40 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         switch (command) {
+            case '!onlyadmin':
+            case '!soloadmin': {
+                if (!isGroup) {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando può essere utilizzato solo all'interno dei gruppi." });
+                    return true;
+                }
+
+                if (!isOwner(sender, sock)) {
+                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario del bot." });
+                    return true;
+                }
+
+                const action = args[1]?.toLowerCase();
+                if (action === 'on') {
+                    config.onlyAdminMode = true;
+                    saveBotState();
+                    
+                    let respText = `🔒 **Modalità Solo Admin Attivata!**\n\nDa questo momento il bot risponderà esclusivamente ai comandi inviati dagli **amministratori del gruppo** (e al proprietario del bot).`;
+                    if (targetMention) {
+                        respText += `\n\n📌 *Configurato per l'utente/gruppo:* @${targetMention.split('@')[0]}`;
+                        await sock.sendMessage(chatJid, { text: respText, mentions: [targetMention] });
+                    } else {
+                        await sock.sendMessage(chatJid, { text: respText });
+                    }
+                } else if (action === 'off') {
+                    config.onlyAdminMode = false;
+                    saveBotState();
+                    await sock.sendMessage(chatJid, { text: `🔓 **Modalità Solo Admin Disattivata!**\nTutti i partecipanti del gruppo possono nuovamente utilizzare i comandi del bot.` });
+                } else {
+                    await sock.sendMessage(chatJid, { text: "⚠️ Utilizzo corretto:\n• `!onlyadmin on` (o con `@utente`)\n• `!onlyadmin off`" });
+                }
+                return true;
+            }
+
             case '!aggiungicomando':
             case '!addcmd':
             case '!nuovocomando': {
@@ -578,6 +634,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !promuovi @utente ⭐ - Promuove l'utente amministratore
 - !demuovi @utente (o !quickdemote) 👤 - Rimuove subito i poteri di admin
 - !multidemote @u1 @u2... 👥 - Rimuove i poteri di admin a più utenti insieme
+- !onlyadmin on/off (@utente) 🔒 - Riserva l'uso dei comandi solo agli admin del gruppo
 
 ⚙️ IMPOSTAZIONI E SICUREZZA GRUPPO
 - !checkadmin 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
