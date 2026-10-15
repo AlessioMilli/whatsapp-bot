@@ -154,6 +154,29 @@ const isProtected = (jid, config) => {
     return isOwner(jid) || config.protectedUsers.has(jid);
 };
 
+// 🤖 STRATEGIA ANTI-BAN: Invio messaggi con finta digitazione umana (tra 4 e 7 secondi)
+async function sendHumanMessage(sock, chatJid, content, options = {}) {
+    try {
+        // Attiva lo stato "sta digitando"
+        await sock.presenceSubscribe(chatJid);
+        await sock.sendPresenceUpdate('composing', chatJid);
+
+        // Calcola un tempo casuale tra 4000ms (4 secondi) e 7000ms (7 secondi)
+        const randomDelay = Math.floor(Math.random() * (7000 - 4000 + 1)) + 4000;
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
+
+        // Ferma lo stato di digitazione passando a "paused"
+        await sock.sendPresenceUpdate('paused', chatJid);
+
+        // Invia effettivamente il messaggio
+        return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
+    } catch (err) {
+        console.error("Errore nell'invio del messaggio human-like:", err);
+        // Fallback di sicurezza in caso di errore nella presenza
+        return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
+    }
+}
+
 export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
     try {
         if (!chatJid) chatJid = m.key.remoteJid;
@@ -261,7 +284,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     let welcomeText = `Buongiorno @${newMemberJid.split('@')[0]} e benvenuto/a nel gruppo${groupName}\n\n`;
                     if (desc) welcomeText += `Leggi con attenzione le regole: ${desc}`;
 
-                    await sock.sendMessage(chatJid, { text: welcomeText, mentions: [newMemberJid] });
+                    await sendHumanMessage(sock, chatJid, welcomeText, { mentions: [newMemberJid] });
                 } catch (err) {}
             }
             return true;
@@ -278,10 +301,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup && config.photoFilter && m.message?.imageMessage && !isOwner(sender, sock)) {
             try {
                 await sock.sendMessage(chatJid, { delete: m.key });
-                await sock.sendMessage(chatJid, { 
-                    text: `⚠️ @${sender.split('@')[0]}, non puoi inviare foto senza autorizzazione! Il messaggio è stato rimosso automaticamente per tutelare la privacy.`, 
-                    mentions: [sender] 
-                });
+                await sendHumanMessage(sock, chatJid, `⚠️ @${sender.split('@')[0]}, non puoi inviare foto senza autorizzazione! Il messaggio è stato rimosso automaticamente per tutelare la privacy.`, { mentions: [sender] });
                 return true;
             } catch (err) {}
         }
@@ -307,22 +327,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         if (!messageText) return false;
 
-        // 🔒 CONTROLLO RIGIDO E INMANDABILE PER LA MODALITÀ ONLY ADMIN
+        // 🔒 CONTROLLO RIGIDO E INFALLIBILE PER LA MODALITÀ ONLY ADMIN
         if (isGroup && config.onlyAdminMode && messageText.startsWith('!') && !isOwner(sender, sock)) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
                 const senderNumber = sender.replace(/[^0-9]/g, '');
                 
-                // Cerca se l'utente è registrato tra gli admin
                 const participant = metadata.participants.find(p => p.id.replace(/[^0-9]/g, '') === senderNumber);
                 const isUserAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
 
                 if (!isUserAdmin) {
-                    await sock.sendMessage(chatJid, { 
-                        text: `⚠️ In questo gruppo la gestione dei comandi del bot è riservata unicamente agli **amministratori**.`,
-                        mentions: [sender]
-                    });
-                    return true; // Blocca categoricamente prima dello switch comandi
+                    await sendHumanMessage(sock, chatJid, `⚠️ In questo gruppo la gestione dei comandi del bot è riservata unicamente agli **amministratori**.`, { mentions: [sender] });
+                    return true;
                 }
             } catch (e) {
                 console.error("Errore verifica admin per onlyAdminMode:", e);
@@ -336,7 +352,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         // 🧠 Controllo se è un comando personalizzato dinamico salvato nel database
         if (customCommands.has(command)) {
             const customResponse = customCommands.get(command);
-            await sock.sendMessage(chatJid, { text: customResponse });
+            await sendHumanMessage(sock, chatJid, customResponse);
             return true;
         }
 
@@ -366,7 +382,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             let text = `📢 Attenzione a tutti ragazzi\n\n${announcementText}\n\n`;
             for (let p of participants) text += `@${p.split('@')[0]} `;
 
-            await sock.sendMessage(chatJid, { text: text, mentions: participants });
+            await sendHumanMessage(sock, chatJid, text, { mentions: participants });
             return true;
         }
 
@@ -375,7 +391,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             const newTitle = messageText.trim();
             if (newTitle && isGroup) {
                 await sock.groupUpdateSubject(chatJid, newTitle);
-                await sock.sendMessage(chatJid, { text: `🏷 Il nome del gruppo è stato aggiornato in modo perfetto` });
+                await sendHumanMessage(sock, chatJid, `🏷 Il nome del gruppo è stato aggiornato in modo perfetto`);
             }
             return true;
         }
@@ -384,13 +400,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
             if (urlRegex.test(messageText)) {
                 await sock.sendMessage(chatJid, { delete: m.key }).catch(() => {});
-                await sock.sendMessage(chatJid, { text: `⚠ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso` });
+                await sendHumanMessage(sock, chatJid, `⚠ Non puoi inviare link esterni in questo gruppo se prima non chiedi il permesso`);
                 return true;
             }
         }
 
         if (targetMention && isProtected(targetMention, config) && ['!mute', '!warn', '!kick', '!rimuovi', '!demuovi', '!quickdemote', '!multidemote', '!clearsender', '!cleardue'].includes(command)) {
-            await sock.sendMessage(chatJid, { text: `🛡 Questo utente è protetto in questo gruppo` });
+            await sendHumanMessage(sock, chatJid, `🛡 Questo utente è protetto in questo gruppo`);
             return true;
         }
 
@@ -398,12 +414,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!onlyadmin':
             case '!soloadmin': {
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Questo comando può essere utilizzato solo all'interno dei gruppi." });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Questo comando può essere utilizzato solo all'interno dei gruppi.");
                     return true;
                 }
 
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario del bot." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato esclusivamente al proprietario del bot.");
                     return true;
                 }
 
@@ -415,16 +431,16 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     let respText = `🔒 **Modalità Solo Admin Attivata!**\n\nDa questo momento il bot risponderà esclusivamente ai comandi inviati dagli **amministratori del gruppo** (e al proprietario del bot).`;
                     if (targetMention) {
                         respText += `\n\n📌 *Configurato per l'utente/gruppo:* @${targetMention.split('@')[0]}`;
-                        await sock.sendMessage(chatJid, { text: respText, mentions: [targetMention] });
+                        await sendHumanMessage(sock, chatJid, respText, { mentions: [targetMention] });
                     } else {
-                        await sock.sendMessage(chatJid, { text: respText });
+                        await sendHumanMessage(sock, chatJid, respText);
                     }
                 } else if (action === 'off') {
                     config.onlyAdminMode = false;
                     saveBotState();
-                    await sock.sendMessage(chatJid, { text: `🔓 **Modalità Solo Admin Disattivata!**\nTutti i partecipanti del gruppo possono nuovamente utilizzare i comandi del bot.` });
+                    await sendHumanMessage(sock, chatJid, `🔓 **Modalità Solo Admin Disattivata!**\nTutti i partecipanti del gruppo possono nuovamente utilizzare i comandi del bot.`);
                 } else {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Utilizzo corretto:\n• `!onlyadmin on` (o con `@utente`)\n• `!onlyadmin off`" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Utilizzo corretto:\n• `!onlyadmin on` (o con `@utente`)\n• `!onlyadmin off`");
                 }
                 return true;
             }
@@ -433,7 +449,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!addcmd':
             case '!nuovocomando': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato al proprietario." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato al proprietario.");
                     return true;
                 }
 
@@ -452,9 +468,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 customCommands.set(newCmd, responseText);
                 saveCustomCommands();
 
-                await sock.sendMessage(chatJid, { 
-                    text: `✅ **Comando aggiunto con successo!**\n\n• **Comando:** \`${newCmd}\`\n• **Risposta:** ${responseText}\n\nIl comando è stato integrato nel database locale e salvato permanentemente.` 
-                });
+                await sendHumanMessage(sock, chatJid, `✅ **Comando aggiunto con successo!**\n\n• **Comando:** \`${newCmd}\`\n• **Risposta:** ${responseText}\n\nIl comando è stato integrato nel database locale e salvato permanentemente.`);
                 return true;
             }
 
@@ -462,22 +476,22 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!delcmd':
             case '!eliminacomando': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato al proprietario." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato al proprietario.");
                     return true;
                 }
 
                 const targetCmd = args[1] ? args[1].toLowerCase() : "";
                 if (!targetCmd) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Specifica il comando da rimuovere.\nEsempio: `!rimuovicomando !regole`" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Specifica il comando da rimuovere.\nEsempio: `!rimuovicomando !regole`");
                     return true;
                 }
 
                 if (customCommands.has(targetCmd)) {
                     customCommands.delete(targetCmd);
                     saveCustomCommands();
-                    await sock.sendMessage(chatJid, { text: `✅ Il comando \`${targetCmd}\` è stato rimosso con successo dal database.` });
+                    await sendHumanMessage(sock, chatJid, `✅ Il comando \`${targetCmd}\` è stato rimosso con successo dal database.`);
                 } else {
-                    await sock.sendMessage(chatJid, { text: `⚠️ Il comando \`${targetCmd}\` non esiste tra i comandi personalizzati.` });
+                    await sendHumanMessage(sock, chatJid, `⚠️ Il comando \`${targetCmd}\` non esiste tra i comandi personalizzati.`);
                 }
                 return true;
             }
@@ -486,12 +500,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!ricarica':
             case '!reload': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato al proprietario." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato al proprietario.");
                     return true;
                 }
                 saveBotState();
                 saveCustomCommands();
-                await sock.sendMessage(chatJid, { text: "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni, i comandi personalizzati e gli ID sono stati salvati permanentemente." });
+                await sendHumanMessage(sock, chatJid, "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni, i comandi personalizzati e gli ID sono stati salvati permanentemente.");
                 return true;
             }
 
@@ -504,7 +518,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         const groupList = Object.values(groups);
 
                         if (groupList.length === 0) {
-                            await sock.sendMessage(chatJid, { text: "❌ Il bot non è presente in alcun gruppo." });
+                            await sendHumanMessage(sock, chatJid, "❌ Il bot non è presente in alcun gruppo.");
                             return true;
                         }
 
@@ -516,9 +530,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             );
 
                             if (matchedGroups.length === 0) {
-                                await sock.sendMessage(chatJid, { 
-                                    text: `❌ Nessun gruppo trovato corrispondente a: *"${searchTerms}"*` 
-                                });
+                                await sendHumanMessage(sock, chatJid, `❌ Nessun gruppo trovato corrispondente a: *"${searchTerms}"*`);
                                 return true;
                             }
 
@@ -527,7 +539,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                                 response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
                             });
 
-                            await sock.sendMessage(chatJid, { text: response });
+                            await sendHumanMessage(sock, chatJid, response);
                             return true;
                         }
 
@@ -536,10 +548,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             response += `${index + 1}. *${group.subject}*\n   ID: \`${group.id}\`\n\n`;
                         });
 
-                        await sock.sendMessage(chatJid, { text: response });
+                        await sendHumanMessage(sock, chatJid, response);
                     } catch (error) {
                         console.error("Errore nel recupero dei gruppi:", error);
-                        await sock.sendMessage(chatJid, { text: "❌ Errore durante il recupero della lista dei gruppi." });
+                        await sendHumanMessage(sock, chatJid, "❌ Errore durante il recupero della lista dei gruppi.");
                     }
                     return true;
                 }
@@ -547,10 +559,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if ((args[1] && ['utente', 'numero'].includes(args[1].toLowerCase())) || targetMention) {
                     try {
                         if (targetMention) {
-                            await sock.sendMessage(chatJid, { 
-                                text: `👤 *JID dell'utente taggato:* \`${targetMention}\``,
-                                mentions: [targetMention]
-                            });
+                            await sendHumanMessage(sock, chatJid, `👤 *JID dell'utente taggato:* \`${targetMention}\``, { mentions: [targetMention] });
                             return true;
                         }
 
@@ -558,7 +567,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         const userQuery = args.slice(2).join(' ').replace(/[^0-9a-zA-Z]/g, '').trim();
                         
                         if (!userQuery) {
-                            await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567`" });
+                            await sendHumanMessage(sock, chatJid, "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567`");
                             return true;
                         }
 
@@ -588,7 +597,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         }
 
                         if (foundUsers.length === 0) {
-                            await sock.sendMessage(chatJid, { text: `❌ Nessun utente trovato per: *"${userQuery}"* nei gruppi del bot.` });
+                            await sendHumanMessage(sock, chatJid, `❌ Nessun utente trovato per: *"${userQuery}"* nei gruppi del bot.`);
                             return true;
                         }
 
@@ -597,22 +606,18 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             resText += `${i + 1}. JID: \`${u.id}\`\n   Gruppo: ${u.groupName}\n\n`;
                         });
 
-                        await sock.sendMessage(chatJid, { text: resText });
+                        await sendHumanMessage(sock, chatJid, resText);
                     } catch (err) {
                         console.error("Errore ricerca utente/numero:", err);
-                        await sock.sendMessage(chatJid, { text: "❌ Errore durante la ricerca." });
+                        await sendHumanMessage(sock, chatJid, "❌ Errore durante la ricerca.");
                     }
                     return true;
                 }
 
                 if (isGroup) {
-                    await sock.sendMessage(chatJid, { 
-                        text: `📌 *ID di questo gruppo:* \`${chatJid}\`` 
-                    });
+                    await sendHumanMessage(sock, chatJid, `📌 *ID di questo gruppo:* \`${chatJid}\``);
                 } else {
-                    await sock.sendMessage(chatJid, { 
-                        text: `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• !getjid gruppo\n• !getjid numero <num>\n• !getjid utente <nome>\n• !getjid @utente` 
-                    });
+                    await sendHumanMessage(sock, chatJid, `👤 *Il tuo ID (JID):* \`${chatJid}\`\n\n💡 *Esempi di utilizzo:*\n• !getjid gruppo\n• !getjid numero <num>\n• !getjid utente <nome>\n• !getjid @utente`);
                 }
                 return true;
             }
@@ -688,26 +693,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     }
                 }
 
-                await sock.sendMessage(chatJid, { text: menuText });
+                await sendHumanMessage(sock, chatJid, menuText);
                 return true;
             }
 
             case '!setgeminiak':
             case '!setapi': {
                 if (isGroup) {
-                    await sock.sendMessage(chatJid, { text: "🔒 Per motivi di sicurezza, puoi impostare la chiave API inviandomi questo comando **unicamente in chat privata**." });
+                    await sendHumanMessage(sock, chatJid, "🔒 Per motivi di sicurezza, puoi impostare la chiave API inviandomi questo comando **unicamente in chat privata**.");
                     return true;
                 }
 
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Non hai i permessi per configurare la chiave API." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Non hai i permessi per configurare la chiave API.");
                     return true;
                 }
 
                 const newKey = messageText.replace(/^(?:!setgeminiak|!setapi)/i, '').trim();
 
                 if (!newKey) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci la chiave API dopo il comando.\nEsempio: !setgeminiak la_tua_chiave_qui" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Inserisci la chiave API dopo il comando.\nEsempio: !setgeminiak la_tua_chiave_qui");
                     return true;
                 }
 
@@ -715,10 +720,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const configData = { apiKey: newKey };
                     fs.writeFileSync('./config_ai.json', JSON.stringify(configData, null, 2));
                     
-                    await sock.sendMessage(chatJid, { text: "✅ **Chiave API salvata con successo!**\nTutte le funzionalità dell'intelligenza artificiale sono ora sbloccate e pronte all'uso." });
+                    await sendHumanMessage(sock, chatJid, "✅ **Chiave API salvata con successo!**\nTutte le funzionalità dell'intelligenza artificiale sono ora sbloccate e pronte all'uso.");
                 } catch (err) {
                     console.error("Errore salvataggio chiave API:", err);
-                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante il salvataggio della chiave." });
+                    await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante il salvataggio della chiave.");
                 }
                 return true;
             }
@@ -726,13 +731,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!banphone':
             case '!ban numero': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Questo comando è riservato esclusivamente al proprietario." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Questo comando è riservato esclusivamente al proprietario.");
                     return true;
                 }
 
                 const targetPhone = args[1]?.replace(/[^0-9]/g, '');
                 if (!targetPhone) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido.\nEsempio: !banphone 393331234567" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Inserisci un numero valido.\nEsempio: !banphone 393331234567");
                     return true;
                 }
 
@@ -752,20 +757,20 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     } catch (e) {}
                 }
 
-                await sock.sendMessage(chatJid, { text: `✅ Il numero +${targetPhone} è stato inserito nella blacklist permanente. Se proveranno ad aggiungerlo, il bot lo ribannerà all'istante.` });
+                await sendHumanMessage(sock, chatJid, `✅ Il numero +${targetPhone} è stato inserito nella blacklist permanente. Se proveranno ad aggiungerlo, il bot lo ribannerà all'istante.`);
                 return true;
             }
 
             case '!sblocconumero':
             case '!unblockphone': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Questo comando è riservato esclusivamente al proprietario." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Questo comando è riservato esclusivamente al proprietario.");
                     return true;
                 }
 
                 const targetPhone = args[1]?.replace(/[^0-9]/g, '');
                 if (!targetPhone) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci il numero da sbloccare.\nEsempio: !sblocconumero 393331234567" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Inserisci il numero da sbloccare.\nEsempio: !sblocconumero 393331234567");
                     return true;
                 }
 
@@ -775,9 +780,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (index !== -1) {
                     phoneBlacklist.splice(index, 1);
                     savePhoneBlacklist(phoneBlacklist);
-                    await sock.sendMessage(chatJid, { text: `✅ Il numero +${targetPhone} è stato rimosso dalla blacklist permanente.` });
+                    await sendHumanMessage(sock, chatJid, `✅ Il numero +${targetPhone} è stato rimosso dalla blacklist permanente.`);
                 } else {
-                    await sock.sendMessage(chatJid, { text: `⚠️ Il numero +${targetPhone} non è presente nella blacklist.` });
+                    await sendHumanMessage(sock, chatJid, `⚠️ Il numero +${targetPhone} non è presente nella blacklist.`);
                 }
                 return true;
             }
@@ -787,13 +792,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const userQuery = messageText.replace(/^(?:!parla|!ia)/i, '').trim();
                 
                 if (!userQuery) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Scrivi una domanda o un argomento dopo il comando.\nEsempio: !parla cos'è un buco nero?" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Scrivi una domanda o un argomento dopo il comando.\nEsempio: !parla cos'è un buco nero?");
                     return true;
                 }
 
                 const OLLAMA_API_KEY = getApiKey();
                 if (!OLLAMA_API_KEY) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare l'IA." });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare l'IA.");
                     return true;
                 }
 
@@ -804,7 +809,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     
                     if (now - lastAiTime < cooldownTimeMs) {
                         const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
-                        await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di usare nuovamente il comando IA.`, mentions: [sender] });
+                        await sendHumanMessage(sock, chatJid, `⏳ Attendi altri ${secondsLeft} secondi prima di usare nuovamente il comando IA.`, { mentions: [sender] });
                         return true;
                     }
                     aiCooldowns.set(sender, now);
@@ -829,11 +834,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const data = await response.json();
                     const aiResponse = data?.choices?.[0]?.message?.content || "Mi dispiace, non sono riuscito a elaborare una risposta.";
 
-                    await sock.sendMessage(chatJid, { text: `🤖 **Ollama IA**:\n\n${aiResponse}` });
+                    await sendHumanMessage(sock, chatJid, `🤖 **Ollama IA**:\n\n${aiResponse}`);
 
                 } catch (error) {
                     console.error("Errore API Ollama:", error);
-                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la connessione con l'intelligenza artificiale di Ollama." });
+                    await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la connessione con l'intelligenza artificiale di Ollama.");
                 }
                 return true;
             }
@@ -843,13 +848,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const searchQuery = messageText.replace(/^(?:!cerca|!web)/i, '').trim();
 
                 if (!searchQuery) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci cosa desideri cercare.\nEsempio: !cerca quando è nato lyon wgf" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Inserisci cosa desideri cercare.\nEsempio: !cerca quando è nato lyon wgf");
                     return true;
                 }
 
                 const OLLAMA_API_KEY = getApiKey();
                 if (!OLLAMA_API_KEY) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare la ricerca." });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare la ricerca.");
                     return true;
                 }
 
@@ -860,7 +865,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     
                     if (now - lastAiTime < cooldownTimeMs) {
                         const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
-                        await sock.sendMessage(chatJid, { text: `⏳ Attendi altri ${secondsLeft} secondi prima di effettuare un'altra ricerca.`, mentions: [sender] });
+                        await sendHumanMessage(sock, chatJid, `⏳ Attendi altri ${secondsLeft} secondi prima di effettuare un'altra ricerca.`, { mentions: [sender] });
                         return true;
                     }
                     aiCooldowns.set(sender, now);
@@ -885,11 +890,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const data = await response.json();
                     const webAnswer = data?.choices?.[0]?.message?.content || "Mi dispiace, non sono riuscito a elaborare una risposta.";
 
-                    await sock.sendMessage(chatJid, { text: `🌐 **Risposta Web**:\n\n${webAnswer}` });
+                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Web**:\n\n${webAnswer}`);
 
                 } catch (error) {
                     console.error("Errore Web Search Ollama:", error);
-                    await sock.sendMessage(chatJid, { text: "❌ Si è verificato un errore durante la richiesta." });
+                    await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la richiesta.");
                 }
                 return true;
             }
@@ -901,7 +906,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const inputArgs = messageText.replace(/^(?:!ripeti|!flood)/i, '').trim().split(/\s+/);
                 
                 if (inputArgs.length < 2) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Uso corretto: !ripeti [il tuo messaggio] [numero di volte]\nEsempio: !ripeti Ciao a tutti 5" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Uso corretto: !ripeti [il tuo messaggio] [numero di volte]\nEsempio: !ripeti Ciao a tutti 5");
                     return true;
                 }
 
@@ -909,19 +914,19 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const count = parseInt(countStr, 10);
 
                 if (isNaN(count) || count <= 0 || count > 20) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Inserisci un numero valido alla fine (massimo 20 volte)." });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Inserisci un numero valido alla fine (massimo 20 volte).");
                     return true;
                 }
 
                 const textToRepeat = inputArgs.slice(0, inputArgs.length - 1).join(' ');
 
-                await sock.sendMessage(chatJid, { text: `🚀 Avvio invio: ripeterò il messaggio "${textToRepeat}" per ${count} volte.` });
+                await sendHumanMessage(sock, chatJid, `🚀 Avvio invio: ripeterò il messaggio "${textToRepeat}" per ${count} volte.`);
 
                 for (let i = 1; i <= count; i++) {
                     const customCommandTag = `!loop_${i}`;
                     const finalMessage = `${textToRepeat} (${customCommandTag} - ${i}/${count})`;
                     
-                    await sock.sendMessage(chatJid, { text: finalMessage });
+                    await sendHumanMessage(sock, chatJid, finalMessage);
                     await new Promise(resolve => setTimeout(resolve, 800));
                 }
                 return true;
@@ -930,25 +935,25 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!clearsender':
             case '!cleardue': {
                 if (!isGroup) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Questo comando può essere usato solo nei gruppi." });
+                    await sendHumanMessage(sock, chatJid, "⚠ Questo comando può essere usato solo nei gruppi.");
                     return true;
                 }
 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: !clearsender @utente" });
+                    await sendHumanMessage(sock, chatJid, "⚠ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: !clearsender @utente");
                     return true;
                 }
 
                 const chatMap = groupMessages.get(chatJid);
                 if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Non ho trovato messaggi recenti salvati per questo utente in questa sessione.", mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, "⚠ Non ho trovato messaggi recenti salvati per questo utente in questa sessione.", { mentions: [targetMention] });
                     return true;
                 }
 
                 const userMsgs = chatMap.get(targetMention);
                 const totalToDel = userMsgs.length;
 
-                await sock.sendMessage(chatJid, { text: `🧹 Avvio cancellazione di ${totalToDel} messaggi per l'utente...`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `🧹 Avvio cancellazione di ${totalToDel} messaggi per l'utente...`, { mentions: [targetMention] });
 
                 let deletedCount = 0;
                 for (let msgObj of userMsgs) {
@@ -967,7 +972,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 chatMap.set(targetMention, []);
-                await sock.sendMessage(chatJid, { text: `✅ Operazione completata: eliminati circa ${deletedCount} messaggi dell'utente.`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `✅ Operazione completata: eliminati circa ${deletedCount} messaggi dell'utente.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -975,12 +980,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!botclean': {
                 const botList = botSentMessages.get(chatJid);
                 if (!botList || botList.length === 0) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Non ci sono messaggi inviati da me memorizzati in questa chat." });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Non ci sono messaggi inviati da me memorizzati in questa chat.");
                     return true;
                 }
 
                 const totalBotMsgs = botList.length;
-                await sock.sendMessage(chatJid, { text: `🧹 Avvio rimozione di tutti i miei ${totalBotMsgs} messaggi inviati in questa chat...` });
+                await sendHumanMessage(sock, chatJid, `🧹 Avvio rimozione di tutti i miei ${totalBotMsgs} messaggi inviati in questa chat...`);
 
                 let removedCount = 0;
                 for (let msgObj of botList) {
@@ -998,14 +1003,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 botSentMessages.set(chatJid, []);
-                await sock.sendMessage(chatJid, { text: `✅ Operazione completata: ho eliminato ${removedCount} messaggi miei.` });
+                await sendHumanMessage(sock, chatJid, `✅ Operazione completata: ho eliminato ${removedCount} messaggi miei.`);
                 return true;
             }
 
             case '!mute': {
                 if (!targetMention) return true;
                 mutedUsers.add(targetMention);
-                await sock.sendMessage(chatJid, { text: `🔇 L'utente è stato mutato in questo gruppo.`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `🔇 L'utente è stato mutato in questo gruppo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1015,7 +1020,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 for (let u of mutedUsers) {
                     if (u === targetMention || u.split('@')[0] === targetClean) mutedUsers.delete(u);
                 }
-                await sock.sendMessage(chatJid, { text: `🔊 L'utente può tornare a scrivere in questo gruppo.`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `🔊 L'utente può tornare a scrivere in questo gruppo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1023,10 +1028,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (!targetMention) return true;
 
                 if (isProtected(targetMention, config)) {
-                    await sock.sendMessage(chatJid, { 
-                        text: `Non puoi ammonire l'owner o un utente protetto! 🛡️`, 
-                        mentions: [targetMention] 
-                    });
+                    await sendHumanMessage(sock, chatJid, `Non puoi ammonire l'owner o un utente protetto! 🛡️`, { mentions: [targetMention] });
                     return true;
                 }
 
@@ -1034,11 +1036,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 warnings.set(targetMention + chatJid, currentWarns);
 
                 if (currentWarns < 3) {
-                    await sock.sendMessage(chatJid, { text: `⚠ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, `⚠ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, { mentions: [targetMention] });
                 } else {
                     warnings.delete(targetMention + chatJid);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                    await sock.sendMessage(chatJid, { text: `🚨 3 avvertimenti superati: utente espulso da questo gruppo.`, mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, `🚨 3 avvertimenti superati: utente espulso da questo gruppo.`, { mentions: [targetMention] });
                 }
                 return true;
             }
@@ -1047,7 +1049,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!kick': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                await sock.sendMessage(chatJid, { text: `Utente rimosso da questo gruppo con successo.`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `Utente rimosso da questo gruppo con successo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1058,7 +1060,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const participants = metadata.participants.filter(p => !p.admin && !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participants, "remove");
-                    await sock.sendMessage(chatJid, { text: "🧹 Membri non admin rimossi da questo gruppo" });
+                    await sendHumanMessage(sock, chatJid, "🧹 Membri non admin rimossi da questo gruppo");
                 }
                 return true;
             }
@@ -1078,14 +1080,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!clearalltesto': {
                 const keyword = messageText.replace(/^!clearalltesto/i, '').trim();
                 if (!keyword) return true;
-                await sock.sendMessage(chatJid, { text: `🔍 Scansione avviata in questo gruppo per: ${keyword}` });
+                await sendHumanMessage(sock, chatJid, `🔍 Scansione avviata in questo gruppo per: ${keyword}`);
                 return true;
             }
 
             case '!promuovi': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "promote");
-                await sock.sendMessage(chatJid, { text: `Utente promosso ad admin in questo gruppo.`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `Utente promosso ad admin in questo gruppo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1093,7 +1095,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!quickdemote': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "demote");
-                await sock.sendMessage(chatJid, { text: `Poteri revocati in questo gruppo.`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `Poteri revocati in questo gruppo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1102,14 +1104,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const targets = getAllMentionedJids();
                 if (targets.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, targets, "demote");
-                    await sock.sendMessage(chatJid, { text: `Admin multipli rimossi in questo gruppo.` });
+                    await sendHumanMessage(sock, chatJid, `Admin multipli rimossi in questo gruppo.`);
                 }
                 return true;
             }
 
             case '!checkadmin': {
                 if (!isGroup) return true;
-                await sock.sendMessage(chatJid, { text: "Verifica completata: i comandi di moderazione sono liberi per tutti in questo gruppo." });
+                await sendHumanMessage(sock, chatJid, "Verifica completata: i comandi di moderazione sono liberi per tutti in questo gruppo.");
                 return true;
             }
 
@@ -1118,10 +1120,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const mode = args[1];
                 if (mode === 'on') {
                     await sock.groupSettingUpdate(chatJid, 'locked');
-                    await sock.sendMessage(chatJid, { text: "🔒 Info modificabili solo dagli admin in questo gruppo." });
+                    await sendHumanMessage(sock, chatJid, "🔒 Info modificabili solo dagli admin in questo gruppo.");
                 } else if (mode === 'off') {
                     await sock.groupSettingUpdate(chatJid, 'unlocked');
-                    await sock.sendMessage(chatJid, { text: "🔓 Info modificabili da tutti in questo gruppo." });
+                    await sendHumanMessage(sock, chatJid, "🔓 Info modificabili da tutti in questo gruppo.");
                 }
                 return true;
             }
@@ -1131,7 +1133,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupJoinApprovalMode(chatJid, mode).catch(() => {});
-                    await sock.sendMessage(chatJid, { text: `📋 Approvazione membri impostata su ${mode} qui.` });
+                    await sendHumanMessage(sock, chatJid, `📋 Approvazione membri impostata su ${mode} qui.`);
                 }
                 return true;
             }
@@ -1141,7 +1143,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupAddMode(chatJid, mode === 'on' ? 'admin_add' : 'all_member_add').catch(() => {});
-                    await sock.sendMessage(chatJid, { text: `➕ Aggiunta membri impostata su ${mode} qui.` });
+                    await sendHumanMessage(sock, chatJid, `➕ Aggiunta membri impostata su ${mode} qui.`);
                 }
                 return true;
             }
@@ -1151,22 +1153,22 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const mode = args[1];
                 if (mode === 'on' || mode === 'off') {
                     await sock.groupMemberAddMode(chatJid, mode === 'on' ? 'prompt' : 'no_prompt').catch(() => {});
-                    await sock.sendMessage(chatJid, { text: `📜 Cronologia ai nuovi impostata su ${mode} qui.` });
+                    await sendHumanMessage(sock, chatJid, `📜 Cronologia ai nuovi impostata su ${mode} qui.`);
                 }
                 return true;
             }
 
             case '!invitelink': {
                 if (!isGroup) return true;
-                await sock.sendMessage(chatJid, { text: `🔗 Link d'invito aggiornato per questo gruppo.` });
+                await sendHumanMessage(sock, chatJid, `🔗 Link d'invito aggiornato per questo gruppo.`);
                 return true;
             }
 
             case '!chiedialessio': {
                 const userMessage = messageText.replace(/^!chiedialessio/i, '').trim();
                 if (userMessage) {
-                    await sock.sendMessage(OWNER_JID, { text: `✉ Supporto da gruppo:\nUtente: @${sender.split('@')[0]}\nTesto:${userMessage}`, mentions: [sender] });
-                    await sock.sendMessage(chatJid, { text: "✉ Messaggio inoltrato con successo ad Alessio." });
+                    await sendHumanMessage(sock, OWNER_JID, `✉ Supporto da gruppo:\nUtente: @${sender.split('@')[0]}\nTesto:${userMessage}`, { mentions: [sender] });
+                    await sendHumanMessage(sock, chatJid, "✉ Messaggio inoltrato con successo ad Alessio.");
                 }
                 return true;
             }
@@ -1180,12 +1182,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                     if (!inlineText) {
                         config.waitingForTagAll.add(sender);
-                        await sock.sendMessage(chatJid, { text: "📢 Che tipo di avviso vuoi che scriva? (Invia qui il testo dell'avviso, oppure scrivi direttamente il messaggio vicino al comando es. !tutti [tuo messaggio])" });
+                        await sendHumanMessage(sock, chatJid, "📢 Che tipo di avviso vuoi che scriva? (Invia qui il testo dell'avviso, oppure scrivi direttamente il messaggio vicino al comando es. !tutti [tuo messaggio])");
                     } else {
                         let text = `📢 Attenzione a tutti ragazzi\n\n${inlineText}\n\n`;
                         for (let p of participants) text += `@${p.split('@')[0]} `;
 
-                        await sock.sendMessage(chatJid, { text: text, mentions: participants });
+                        await sendHumanMessage(sock, chatJid, text, { mentions: participants });
                     }
                 }
                 return true;
@@ -1194,6 +1196,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!poll': {
                 const pollData = messageText.replace(/^!poll/i, '').trim().split(/\s+/);
                 if (pollData[0] && pollData.slice(1).length > 1) {
+                    // Per i sondaggi usiamo l'invio diretto con presenza human-like preventiva
+                    await sock.presenceSubscribe(chatJid);
+                    await sock.sendPresenceUpdate('composing', chatJid);
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    await sock.sendPresenceUpdate('paused', chatJid);
                     await sock.sendMessage(chatJid, { poll: { name: pollData[0], values: pollData.slice(1) } });
                 }
                 return true;
@@ -1203,10 +1210,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isGroup) {
                     if (args[1] === 'on') {
                         config.welcomeEnabled = true;
-                        await sock.sendMessage(chatJid, { text: "👋 Benvenuto attivato in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "👋 Benvenuto attivato in questo gruppo.");
                     } else if (args[1] === 'off') {
                         config.welcomeEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "👋 Benvenuto disattivato in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "👋 Benvenuto disattivato in questo gruppo.");
                     }
                 }
                 return true;
@@ -1217,10 +1224,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const newName = messageText.replace(/^!setname/i, '').trim();
                     if (!newName) {
                         config.waitingForSetName.add(sender);
-                        await sock.sendMessage(chatJid, { text: "🏷 Scrivi il nuovo nome per questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "🏷 Scrivi il nuovo nome per questo gruppo.");
                     } else {
                         await sock.groupUpdateSubject(chatJid, newName);
-                        await sock.sendMessage(chatJid, { text: `🏷 Nome del gruppo aggiornato.` });
+                        await sendHumanMessage(sock, chatJid, `🏷 Nome del gruppo aggiornato.`);
                     }
                 }
                 return true;
@@ -1229,7 +1236,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!lockinfo': {
                 if (isGroup) {
                     await sock.groupSettingUpdate(chatJid, 'locked');
-                    await sock.sendMessage(chatJid, { text: "🔒 Info bloccate per questo gruppo." });
+                    await sendHumanMessage(sock, chatJid, "🔒 Info bloccate per questo gruppo.");
                 }
                 return true;
             }
@@ -1237,7 +1244,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!unlockinfo': {
                 if (isGroup) {
                     await sock.groupSettingUpdate(chatJid, 'unlocked');
-                    await sock.sendMessage(chatJid, { text: "🔓 Info sbloccate per questo gruppo." });
+                    await sendHumanMessage(sock, chatJid, "🔓 Info sbloccate per questo gruppo.");
                 }
                 return true;
             }
@@ -1246,10 +1253,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isGroup) {
                     if (args[1] === 'on') {
                         config.linkFilter = true;
-                        await sock.sendMessage(chatJid, { text: "🌐 Filtro link attivato in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "🌐 Filtro link attivato in questo gruppo.");
                     } else if (args[1] === 'off') {
                         config.linkFilter = false;
-                        await sock.sendMessage(chatJid, { text: "🌐 Filtro link disattivato in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "🌐 Filtro link disattivato in questo gruppo.");
                     }
                 }
                 return true;
@@ -1259,10 +1266,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isGroup) {
                     if (args[1] === 'on') {
                         config.photoFilter = true;
-                        await sock.sendMessage(chatJid, { text: "📸 Protezione anti-foto non autorizzate attivata in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto non autorizzate attivata in questo gruppo.");
                     } else if (args[1] === 'off') {
                         config.photoFilter = false;
-                        await sock.sendMessage(chatJid, { text: "📸 Protezione anti-foto disattivata in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto disattivata in questo gruppo.");
                     }
                 }
                 return true;
@@ -1272,10 +1279,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isGroup) {
                     if (args[1] === 'on') {
                         config.cooldownEnabled = true;
-                        await sock.sendMessage(chatJid, { text: "⏱ Cooldown antispam attivato in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "⏱ Cooldown antispam attivato in questo gruppo.");
                     } else if (args[1] === 'off') {
                         config.cooldownEnabled = false;
-                        await sock.sendMessage(chatJid, { text: "⏱ Cooldown disattivato in questo gruppo." });
+                        await sendHumanMessage(sock, chatJid, "⏱ Cooldown disattivato in questo gruppo.");
                     }
                 }
                 return true;
@@ -1285,12 +1292,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!addowner':
             case '!nuovocoowner': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario principale." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato esclusivamente al proprietario principale.");
                     return true;
                 }
                 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Per favore, tagga l'amico che vuoi promuovere ad owner (es. !aggiungiowner @utente)." });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Per favore, tagga l'amico che vuoi promuovere ad owner (es. !aggiungiowner @utente).");
                     return true;
                 }
 
@@ -1298,10 +1305,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.protectedUsers.add(targetMention);
                 saveBotState();
 
-                await sock.sendMessage(chatJid, { 
-                    text: `👑 L'amico è stato aggiunto con successo tra i co-owner del bot ed è ora protetto! (Stato salvato).`, 
-                    mentions: [targetMention] 
-                });
+                await sendHumanMessage(sock, chatJid, `👑 L'amico è stato aggiunto con successo tra i co-owner del bot ed è ora protetto! (Stato salvato).`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1309,12 +1313,12 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!delowner':
             case '!rimuovicoowner': {
                 if (!isOwner(sender, sock)) {
-                    await sock.sendMessage(chatJid, { text: "⛔ Comando riservato esclusivamente al proprietario principale." });
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato esclusivamente al proprietario principale.");
                     return true;
                 }
                 
                 if (!targetMention) {
-                    await sock.sendMessage(chatJid, { text: "⚠ Tagga l'amico che vuoi rimuovere dagli owner (es. !rimuoviowner @utente)." });
+                    await sendHumanMessage(sock, chatJid, "⚠ Tagga l'amico che vuoi rimuovere dagli owner (es. !rimuoviowner @utente).");
                     return true;
                 }
 
@@ -1322,10 +1326,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.protectedUsers.delete(targetMention);
                 saveBotState();
 
-                await sock.sendMessage(chatJid, { 
-                    text: `🛡 L'amico è stato rimosso dai co-owner del bot. (Stato aggiornato).`, 
-                    mentions: [targetMention] 
-                });
+                await sendHumanMessage(sock, chatJid, `🛡 L'amico è stato rimosso dai co-owner del bot. (Stato aggiornato).`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1333,7 +1334,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!assente': {
                 if (isOwner(sender, sock)) {
                     config.offlineMode = true;
-                    await sock.sendMessage(chatJid, { text: "Modalità offline attiva." });
+                    await sendHumanMessage(sock, chatJid, "Modalità offline attiva.");
                 }
                 return true;
             }
@@ -1342,7 +1343,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!presente': {
                 if (isOwner(sender, sock)) {
                     config.offlineMode = false;
-                    await sock.sendMessage(chatJid, { text: "Modalità online attiva." });
+                    await sendHumanMessage(sock, chatJid, "Modalità online attiva.");
                 }
                 return true;
             }
@@ -1354,10 +1355,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         if (targetMention) {
                             config.protectedUsers.add(targetMention);
                             saveBotState();
-                            await sock.sendMessage(chatJid, { text: `Utente protetto con successo in questo gruppo e salvato.`, mentions: [targetMention] });
+                            await sendHumanMessage(sock, chatJid, `Utente protetto con successo in questo gruppo e salvato.`, { mentions: [targetMention] });
                         } else {
                             config.protectionEnabled = true;
-                            await sock.sendMessage(chatJid, { text: `Protezione avanzata attiva.` });
+                            await sendHumanMessage(sock, chatJid, `Protezione avanzata attiva.`);
                         }
                     } else if (action === 'off') {
                         config.protectionEnabled = false;
@@ -1365,7 +1366,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             config.protectedUsers.delete(targetMention);
                             saveBotState();
                         }
-                        await sock.sendMessage(chatJid, { text: "⚠ Protezione disattivata o utente rimosso dalle protezioni." });
+                        await sendHumanMessage(sock, chatJid, "⚠ Protezione disattivata o utente rimosso dalle protezioni.");
                     }
                 }
                 return true;
@@ -1374,14 +1375,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!broadcast': {
                 const broadText = messageText.replace(/^!broadcast/i, '').trim();
                 if (!broadText) return true;
-                await sock.sendMessage(chatJid, { text: `📡 Broadcast inviato: ${broadText}` });
+                await sendHumanMessage(sock, chatJid, `📡 Broadcast inviato: ${broadText}`);
                 return true;
             }
 
             case '!inspect': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
                 const userWarns = warnings.get(targetMention + chatJid) || 0;
-                await sock.sendMessage(chatJid, { text: `🔍 **Scheda Utente (Qui)**\n• Warn: ${userWarns}`, mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `🔍 **Scheda Utente (Qui)**\n• Warn: ${userWarns}`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1389,7 +1390,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isOwner(sender, sock)) {
                     if (isGroup) {
                         config.isLocked = true;
-                        await sock.sendMessage(chatJid, { text: "🔐 Questo gruppo è ora bloccato: solo gli admin possono scrivere." });
+                        await sendHumanMessage(sock, chatJid, "🔐 Questo gruppo è ora bloccato: solo gli admin possono scrivere.");
                     }
                 }
                 return true;
@@ -1399,7 +1400,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isOwner(sender, sock)) {
                     if (isGroup) {
                         config.isLocked = false;
-                        await sock.sendMessage(chatJid, { text: "🔓 Questo gruppo è ora sbloccato per tutti." });
+                        await sendHumanMessage(sock, chatJid, "🔓 Questo gruppo è ora sbloccato per tutti.");
                     }
                 }
                 return true;
@@ -1407,35 +1408,35 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!backup': {
                 if (!isOwner(sender, sock)) return true;
-                await sock.sendMessage(OWNER_JID, { text: `💾 Backup eseguito.` });
-                await sock.sendMessage(chatJid, { text: "💾 Backup inviato in privato." });
+                await sendHumanMessage(sock, OWNER_JID, `💾 Backup eseguito.`);
+                await sendHumanMessage(sock, chatJid, "💾 Backup inviato in privato.");
                 return true;
             }
 
             case '!emergencyoff': {
                 if (!isOwner(sender, sock)) return true;
                 config.isInactive = true;
-                await sock.sendMessage(chatJid, { text: "⚡ Emergenza attivata qui." });
+                await sendHumanMessage(sock, chatJid, "⚡ Emergenza attivata qui.");
                 return true;
             }
 
             case '!emergencyon': {
                 if (!isOwner(sender, sock)) return true;
                 config.isInactive = false;
-                await sock.sendMessage(chatJid, { text: "⚡ Bot riattivato qui." });
+                await sendHumanMessage(sock, chatJid, "⚡ Bot riattivato qui.");
                 return true;
             }
 
             case '!statsbot': {
                 if (!isOwner(sender, sock)) return true;
-                await sock.sendMessage(chatJid, { text: `📈 Statistiche attive. Gruppi registrati: ${savedGroups.size}` });
+                await sendHumanMessage(sock, chatJid, `📈 Statistiche attive. Gruppi registrati: ${savedGroups.size}`);
                 return true;
             }
 
             case '!listagruppi': {
                 if (!isOwner(sender, sock)) return true;
                 if (savedGroups.size === 0) {
-                    await sock.sendMessage(chatJid, { text: "📂 Nessun gruppo memorizzato finora." });
+                    await sendHumanMessage(sock, chatJid, "📂 Nessun gruppo memorizzato finora.");
                     return true;
                 }
                 let listText = "📂 **LISTA GRUPPI E PARTECIPANTI:**\n\n";
@@ -1450,28 +1451,28 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                     listText += `• **Nome:** ${groupName}\n  **ID:** \`${id}\`\n  **Partecipanti:** ${participantsList}\n\n`;
                 }
-                await sock.sendMessage(chatJid, { text: listText });
+                await sendHumanMessage(sock, chatJid, listText);
                 return true;
             }
 
             case '!blockuser': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
                 blacklist.add(targetMention);
-                await sock.sendMessage(chatJid, { text: "🚫 Utente inserito nella blacklist globale.", mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, "🚫 Utente inserito nella blacklist globale.", { mentions: [targetMention] });
                 return true;
             }
 
             case '!unblockuser': {
                 if (!isOwner(sender, sock) || !targetMention) return true;
                 blacklist.delete(targetMention);
-                await sock.sendMessage(chatJid, { text: "✅ Utente rimosso dalla blacklist globale.", mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, "✅ Utente rimosso dalla blacklist globale.", { mentions: [targetMention] });
                 return true;
             }
 
             case '!cleandb': {
                 if (!isOwner(sender, sock)) return true;
                 warnings.clear();
-                await sock.sendMessage(chatJid, { text: "🗄 Pulizia database completata." });
+                await sendHumanMessage(sock, chatJid, "🗄 Pulizia database completata.");
                 return true;
             }
 
@@ -1495,11 +1496,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const targetConfig = getGroupConfig(targetChatJid);
                     if (action === 'off') {
                         targetConfig.isInactive = true;
-                        await sock.sendMessage(chatJid, { text: `🤖 Bot disattivato con successo nel gruppo con ID: \`${targetChatJid}\`` });
+                        await sendHumanMessage(sock, chatJid, `🤖 Bot disattivato con successo nel gruppo con ID: \`${targetChatJid}\``);
                     } else if (action === 'on') {
                         targetConfig.isInactive = false;
-                        await sock.sendMessage(chatJid, { text: `🤖 Bot riattivato con successo nel gruppo con ID: \`${targetChatJid}\`` });
-                        await sock.sendMessage(targetChatJid, { text: notificationText });
+                        await sendHumanMessage(sock, chatJid, `🤖 Bot riattivato con successo nel gruppo con ID: \`${targetChatJid}\``);
+                        await sendHumanMessage(sock, targetChatJid, notificationText);
                     }
                     return true;
                 }
@@ -1507,13 +1508,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 if (isGroup) {
                     if (action === 'off') {
                         config.isInactive = true;
-                        await sock.sendMessage(chatJid, { text: "🤖 Bot disattivato in questo specifico gruppo." });
+                        await sendHumanMessage(sock, chatJid, "🤖 Bot disattivato in questo specifico gruppo.");
                     } else if (action === 'on') {
                         config.isInactive = false;
-                        await sock.sendMessage(chatJid, { text: notificationText });
+                        await sendHumanMessage(sock, chatJid, notificationText);
                     }
                 } else {
-                    await sock.sendMessage(chatJid, { text: "⚠️ Per usare il comando qui, specifica l'azione e l'ID del gruppo.\nEsempio: `!gruppo off 120363000000000000@g.us`" });
+                    await sendHumanMessage(sock, chatJid, "⚠️ Per usare il comando qui, specifica l'azione e l'ID del gruppo.\nEsempio: `!gruppo off 120363000000000000@g.us`");
                 }
                 return true;
             }
@@ -1538,10 +1539,7 @@ export async function handleGroupParticipantsUpdate(sock, update) {
             if (phoneBlacklist.includes(phoneNumber)) {
                 try {
                     await sock.groupParticipantsUpdate(chatJid, [participantJid], "remove");
-                    await sock.sendMessage(chatJid, { 
-                        text: `⚠ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`,
-                        mentions: [participantJid]
-                    });
+                    await sendHumanMessage(sock, chatJid, `⚠ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`, { mentions: [participantJid] });
                 } catch (e) {
                     console.error("Errore durante il ribannaggio automatico:", e);
                 }
