@@ -154,25 +154,28 @@ const isProtected = (jid, config) => {
     return isOwner(jid) || config.protectedUsers.has(jid);
 };
 
-// 🤖 STRATEGIA ANTI-BAN: Invio messaggi con finta digitazione umana (tra 4 e 7 secondi)
+// 🤖 STRATEGIA ANTI-BAN CORRETTA: Sottoscrizione + Digitazione finta (3-6 secondi)
 async function sendHumanMessage(sock, chatJid, content, options = {}) {
     try {
-        // Attiva lo stato "sta digitando"
+        // 1. OBLIGATORIO: Sottoscrizione alla presenza della chat/gruppo
         await sock.presenceSubscribe(chatJid);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Sincronizzazione tecnica
+
+        // 2. Attiva lo stato "sta digitando..."
         await sock.sendPresenceUpdate('composing', chatJid);
 
-        // Calcola un tempo casuale tra 4000ms (4 secondi) e 7000ms (7 secondi)
-        const randomDelay = Math.floor(Math.random() * (7000 - 4000 + 1)) + 4000;
+        // 3. Ritardo casuale SICURO tra 3 e 6 secondi (3000ms - 6000ms)
+        const randomDelay = Math.floor(Math.random() * (6000 - 3000 + 1)) + 3000;
         await new Promise(resolve => setTimeout(resolve, randomDelay));
 
-        // Ferma lo stato di digitazione passando a "paused"
+        // 4. Metti in pausa la presenza prima di inviare
         await sock.sendPresenceUpdate('paused', chatJid);
 
-        // Invia effettivamente il messaggio
+        // 5. Invia il messaggio
         return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
     } catch (err) {
-        console.error("Errore nell'invio del messaggio human-like:", err);
-        // Fallback di sicurezza in caso di errore nella presenza
+        console.error("Errore invio presenza:", err);
+        // Fallback di sicurezza: invia il messaggio direttamente se la presenza fallisce
         return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
     }
 }
@@ -567,7 +570,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         const userQuery = args.slice(2).join(' ').replace(/[^0-9a-zA-Z]/g, '').trim();
                         
                         if (!userQuery) {
-                            await sendHumanMessage(sock, chatJid, "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567`");
+                            await sendHumanMessage(sock, chatJid, "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567` me");
                             return true;
                         }
 
@@ -1196,10 +1199,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!poll': {
                 const pollData = messageText.replace(/^!poll/i, '').trim().split(/\s+/);
                 if (pollData[0] && pollData.slice(1).length > 1) {
-                    // Per i sondaggi usiamo l'invio diretto con presenza human-like preventiva
                     await sock.presenceSubscribe(chatJid);
                     await sock.sendPresenceUpdate('composing', chatJid);
-                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    await new Promise(resolve => setTimeout(resolve, 4000));
                     await sock.sendPresenceUpdate('paused', chatJid);
                     await sock.sendMessage(chatJid, { poll: { name: pollData[0], values: pollData.slice(1) } });
                 }
