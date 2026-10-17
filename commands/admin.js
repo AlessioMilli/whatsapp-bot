@@ -19,15 +19,17 @@ function savePhoneBlacklist(blacklist) {
     fs.writeFileSync(PHONE_BLACKLIST_FILE, JSON.stringify(blacklist, null, 2));
 }
 
-// Funzione per recuperare la chiave API dell'IA (da file locale o variabili d'ambiente)
+// Funzione per recuperare la chiave API di Google Gemini (da Render, da globale o da file locale)
 function getApiKey() {
+    if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
+    if (global.geminiApiKey) return global.geminiApiKey;
     if (fs.existsSync('./config_ai.json')) {
         try {
             const data = JSON.parse(fs.readFileSync('./config_ai.json', 'utf8'));
             if (data && data.apiKey) return data.apiKey;
         } catch (e) {}
     }
-    return process.env.OLLAMA_API_KEY || "";
+    return "";
 }
 
 // Strutture dati globali di base
@@ -157,25 +159,19 @@ const isProtected = (jid, config) => {
 // 🤖 STRATEGIA ANTI-BAN CORRETTA: Sottoscrizione + Digitazione finta (3-6 secondi)
 async function sendHumanMessage(sock, chatJid, content, options = {}) {
     try {
-        // 1. OBLIGATORIO: Sottoscrizione alla presenza della chat/gruppo
         await sock.presenceSubscribe(chatJid);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Sincronizzazione tecnica
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-        // 2. Attiva lo stato "sta digitando..."
         await sock.sendPresenceUpdate('composing', chatJid);
 
-        // 3. Ritardo casuale SICURO tra 3 e 6 secondi (3000ms - 6000ms)
         const randomDelay = Math.floor(Math.random() * (6000 - 3000 + 1)) + 3000;
         await new Promise(resolve => setTimeout(resolve, randomDelay));
 
-        // 4. Metti in pausa la presenza prima di inviare
         await sock.sendPresenceUpdate('paused', chatJid);
 
-        // 5. Invia il messaggio
         return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
     } catch (err) {
         console.error("Errore invio presenza:", err);
-        // Fallback di sicurezza: invia il messaggio direttamente se la presenza fallisce
         return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
     }
 }
@@ -204,7 +200,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEGLI UTENTI (inclusi i vocali)
+        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEGLI UTENTI
         if (isGroup && chatJid && sender && m.key && m.key.id) {
             if (!groupMessages.has(chatJid)) groupMessages.set(chatJid, new Map());
             let chatMap = groupMessages.get(chatJid);
@@ -222,7 +218,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             if (userMsgs.length > 250) userMsgs.shift();
         }
 
-        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEL BOT (per !clearmetutto)
+        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEL BOT
         if (chatJid && m.key && m.key.fromMe && m.key.id) {
             if (!botSentMessages.has(chatJid)) botSentMessages.set(chatJid, []);
             let botList = botSentMessages.get(chatJid);
@@ -235,7 +231,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo: se c'è, il bot sta completamente zitto (tranne se a scrivere è il proprietario)
+        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo
         const alehJid = "3924911895@s.whatsapp.net";
         if (isGroup && !isOwner(sender, sock)) {
             try {
@@ -330,7 +326,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         if (!messageText) return false;
 
-        // 🔒 CONTROLLO RIGIDO E INFALLIBILE PER LA MODALITÀ ONLY ADMIN
+        // 🔒 CONTROLLO MODALITÀ ONLY ADMIN
         if (isGroup && config.onlyAdminMode && messageText.startsWith('!') && !isOwner(sender, sock)) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
@@ -352,7 +348,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         const command = args[0].toLowerCase();
         const targetMention = getTargetJid();
 
-        // 🧠 Controllo se è un comando personalizzato dinamico salvato nel database
+        // 🧠 Controllo se è un comando personalizzato dinamico
         if (customCommands.has(command)) {
             const customResponse = customCommands.get(command);
             await sendHumanMessage(sock, chatJid, customResponse);
@@ -513,8 +509,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!getjid': {
-                const isGroup = chatJid.endsWith('@g.us');
-
                 if (args[1] && args[1].toLowerCase() === 'gruppo') {
                     try {
                         const groups = await sock.groupFetchAllParticipating();
@@ -642,10 +636,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !clearalltesto [parola] 🔍 - Elimina per tutti i messaggi con la parola indicata
 - !clearsender @utente (o !cleardue) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
-🤖 INTELLIGENZA ARTIFICIALE & SENTINELLA
+🤖 INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 2.5 FLASH)
 - !setgeminiak [chiave] 🔑 - Imposta la chiave API direttamente in chat privata
-- !parla [domanda] (o !ia [domanda]) 💡 - Chatta direttamente con le API Cloud di Ollama
-- !cerca [query] (o !web [query]) 🌐 - Effettua ricerche e naviga sul web sfruttando la chiave API Cloud di Ollama
+- !parla [domanda] (o !ia [domanda]) 💡 - Chatta con Google Gemini 2.5 Flash
+- !cerca [query] (o !web [query]) 🌐 - Cerca informazioni ed elabora risposte via Gemini 2.5 Flash
 
 ⚙️ GESTIONE AMMINISTRATORI
 - !promuovi @utente ⭐ - Promuove l'utente amministratore
@@ -722,8 +716,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 try {
                     const configData = { apiKey: newKey };
                     fs.writeFileSync('./config_ai.json', JSON.stringify(configData, null, 2));
+                    global.geminiApiKey = newKey;
                     
-                    await sendHumanMessage(sock, chatJid, "✅ **Chiave API salvata con successo!**\nTutte le funzionalità dell'intelligenza artificiale sono ora sbloccate e pronte all'uso.");
+                    await sendHumanMessage(sock, chatJid, "✅ **Chiave API di Google Gemini salvata con successo!**\nTutte le funzionalità dell'intelligenza artificiale sono ora sbloccate e pronte all'uso.");
                 } catch (err) {
                     console.error("Errore salvataggio chiave API:", err);
                     await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante il salvataggio della chiave.");
@@ -799,9 +794,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                const OLLAMA_API_KEY = getApiKey();
-                if (!OLLAMA_API_KEY) {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare l'IA.");
+                const GEMINI_API_KEY = getApiKey();
+                if (!GEMINI_API_KEY) {
+                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Imposta la variabile GEMINI_API_KEY su Render o inviami in chat privata il comando !setgeminiak <tua_chiave>.");
                     return true;
                 }
 
@@ -819,29 +814,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 try {
-                    const response = await fetch('https://ollama.com/v1/chat/completions', {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${OLLAMA_API_KEY}`
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            model: 'llama3.2',
-                            messages: [
-                                { role: 'user', content: userQuery }
-                            ],
-                            stream: false
+                            contents: [{
+                                parts: [{ text: userQuery }]
+                            }]
                         })
                     });
 
                     const data = await response.json();
-                    const aiResponse = data?.choices?.[0]?.message?.content || "Mi dispiace, non sono riuscito a elaborare una risposta.";
+                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta.";
 
-                    await sendHumanMessage(sock, chatJid, `🤖 **Ollama IA**:\n\n${aiResponse}`);
+                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini 2.5 Flash**:\n\n${aiResponse}`);
 
                 } catch (error) {
-                    console.error("Errore API Ollama:", error);
-                    await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la connessione con l'intelligenza artificiale di Ollama.");
+                    console.error("Errore API Gemini:", error);
+                    await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la connessione con Google Gemini.");
                 }
                 return true;
             }
@@ -855,9 +847,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     return true;
                 }
 
-                const OLLAMA_API_KEY = getApiKey();
-                if (!OLLAMA_API_KEY) {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Inviami in chat privata il comando !setgeminiak <tua_chiave> per sbloccare la ricerca.");
+                const GEMINI_API_KEY = getApiKey();
+                if (!GEMINI_API_KEY) {
+                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Imposta la variabile GEMINI_API_KEY su Render o inviami in chat privata il comando !setgeminiak <tua_chiave>.");
                     return true;
                 }
 
@@ -875,28 +867,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 try {
-                    const response = await fetch('https://ollama.com/v1/chat/completions', {
+                    const prompt = `Effettua una ricerca aggiornata e rispondi in modo preciso ed esauriente in italiano alla seguente richiesta: ${searchQuery}`;
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${OLLAMA_API_KEY}`
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            model: 'llama3.2',
-                            messages: [
-                                { role: 'user', content: searchQuery }
-                            ],
-                            stream: false
+                            contents: [{
+                                parts: [{ text: prompt }]
+                            }]
                         })
                     });
 
                     const data = await response.json();
-                    const webAnswer = data?.choices?.[0]?.message?.content || "Mi dispiace, non sono riuscito a elaborare una risposta.";
+                    const webAnswer = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta.";
 
-                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Web**:\n\n${webAnswer}`);
+                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Gemini Web**:\n\n${webAnswer}`);
 
                 } catch (error) {
-                    console.error("Errore Web Search Ollama:", error);
+                    console.error("Errore Web Search Gemini:", error);
                     await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la richiesta.");
                 }
                 return true;
