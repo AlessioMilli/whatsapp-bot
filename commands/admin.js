@@ -5,6 +5,7 @@ import fs from 'fs';
 const PHONE_BLACKLIST_FILE = './phone_blacklist.json';
 const STATE_FILE = './bot_state.json';
 const CUSTOM_COMMANDS_FILE = './custom_commands.json';
+const SCHEDULE_FILE = './bot_schedule.json';
 
 function loadPhoneBlacklist() {
     if (!fs.existsSync(PHONE_BLACKLIST_FILE)) return [];
@@ -36,6 +37,46 @@ function getApiKey() {
 let successfulRequestsCount = 0;
 let lastResetDate = new Date().toDateString();
 let rateLimitResetTime = null;
+
+// ⏰ Gestione degli orari di spegnimento/accensione automatici (default: 21:30 e 13:30)
+let scheduleConfig = {
+    shutdownTime: "21:30",
+    startupTime: "13:30"
+};
+
+if (fs.existsSync(SCHEDULE_FILE)) {
+    try {
+        const savedSchedule = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf8'));
+        if (savedSchedule.shutdownTime) scheduleConfig.shutdownTime = savedSchedule.shutdownTime;
+        if (savedSchedule.startupTime) scheduleConfig.startupTime = savedSchedule.startupTime;
+    } catch (e) {}
+}
+
+function saveScheduleConfig() {
+    try {
+        fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(scheduleConfig, null, 2));
+    } catch (e) {}
+}
+
+// Controllo automatico in background degli orari programmati (ogni 30 secondi)
+let dailyAutomationInterval = setInterval(() => {
+    const now = new Date();
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    if (scheduleConfig.shutdownTime && currentTime === scheduleConfig.shutdownTime) {
+        for (let [gId, conf] of groupsConfig.entries()) {
+            conf.isInactive = true;
+        }
+        console.log(`🌙 [AUTOMAZIONE] Orario di spegnimento raggiunto (${currentTime}). Bot disattivato automaticamente.`);
+    }
+
+    if (scheduleConfig.startupTime && currentTime === scheduleConfig.startupTime) {
+        for (let [gId, conf] of groupsConfig.entries()) {
+            conf.isInactive = false;
+        }
+        console.log(`☀️ [AUTOMAZIONE] Orario di riaccensione raggiunto (${currentTime}). Bot riattivato automaticamente.`);
+    }
+}, 30000);
 
 // Strutture dati globali di base
 const blacklist = new Set();
@@ -365,7 +406,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.isInactive = false;
             } else {
                 if (!isOwner(sender, sock)) {
-                    return false;
+                    if (messageText.startsWith('!')) {
+                        await sendHumanMessage(sock, chatJid, `🌙 Il bot è in pausa programmata e si riaccenderà automaticamente domani alle ${scheduleConfig.startupTime}!`);
+                    }
+                    return true;
                 }
             }
         }
@@ -415,6 +459,35 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         switch (command) {
+            case '!impostaorario':
+            case '!setorario': {
+                if (!isOwner(sender, sock)) {
+                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato esclusivamente al proprietario.");
+                    return true;
+                }
+
+                const action = args[1]?.toLowerCase();
+                const timeValue = args[2];
+
+                if (!action || !timeValue || !timeValue.includes(':')) {
+                    await sendHumanMessage(sock, chatJid, `⚠️ Uso corretto:\n• \`!impostaorario spegnimento 22:00\`\n• \`!impostaorario accensione 14:00\`\n\n📌 *Orari attuali:* Spegnimento: ${scheduleConfig.shutdownTime}, Riaccensione:${scheduleConfig.startupTime}`);
+                    return true;
+                }
+
+                if (action === 'spegnimento' || action === 'spegni') {
+                    scheduleConfig.shutdownTime = timeValue;
+                    saveScheduleConfig();
+                    await sendHumanMessage(sock, chatJid, `✅ Orario di spegnimento automatico aggiornato alle ore **${timeValue}**!`);
+                } else if (action === 'accensione' || action === 'riaccensione') {
+                    scheduleConfig.startupTime = timeValue;
+                    saveScheduleConfig();
+                    await sendHumanMessage(sock, chatJid, `✅ Orario di riaccensione automatica aggiornato alle ore **${timeValue}**!`);
+                } else {
+                    await sendHumanMessage(sock, chatJid, "⚠️ Specifica se vuoi cambiare 'spegnimento' o 'accensione'.");
+                }
+                return true;
+            }
+
             case '!onlyadmin':
             case '!soloadmin': {
                 if (!isGroup) {
@@ -509,7 +582,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
                 saveBotState();
                 saveCustomCommands();
-                await sendHumanMessage(sock, chatJid, "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni, i comandi personalizzati e gli ID sono stati salvati permanentemente.");
+                saveScheduleConfig();
+                await sendHumanMessage(sock, chatJid, "🔄 **Codice e stato aggiornati con successo!**\nTutte le protezioni, gli orari automatici e i comandi personalizzati sono stati salvati permanentemente.");
                 return true;
             }
 
@@ -646,7 +720,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !parla [domanda] (o !ia [domanda]) 💡 - Chatta con Google Gemini
 - !cerca [query] (o !web [query]) 🌐 - Cerca informazioni ed elabora risposte via Gemini
 
-⚙️ GESTIONE AMMINISTRATORI
+⚙️ GESTIONE AMMINISTRATORI E AUTOMAZIONE
+- !impostaorario spegnimento/accensione [HH:MM] ⏰ - Cambia gli orari di stop/avvio automatico
 - !promuovi @utente ⭐ - Promuove l'utente amministratore
 - !demuovi @utente (o !quickdemote) 👤 - Rimuove subito i poteri di admin
 - !multidemote @u1 @u2... 👥 - Rimuove i poteri di admin a più utenti insieme
