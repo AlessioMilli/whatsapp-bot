@@ -32,6 +32,11 @@ function getApiKey() {
     return "";
 }
 
+// 📊 Variabili per il tracciamento dei crediti e dei limiti API gratuiti
+let successfulRequestsCount = 0;
+let lastResetDate = new Date().toDateString();
+let rateLimitResetTime = null;
+
 // Strutture dati globali di base
 const blacklist = new Set();
 const warnings = new Map();
@@ -830,15 +835,40 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const data = await response.json();
                     
                     let aiResponse = "";
+                    let isSuccess = false;
+
                     if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
                         aiResponse = data.candidates[0].content.parts[0].text;
+                        isSuccess = true;
                     } else if (data?.error?.message) {
                         aiResponse = `⚠️ Errore API: ${data.error.message}`;
+                        if (data.error.code === 429) {
+                            rateLimitResetTime = new Date(Date.now() + 60000);
+                        }
                     } else {
                         aiResponse = "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
                     }
 
-                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini IA**:\n\n${aiResponse}`);
+                    if (isSuccess) {
+                        const currentDate = new Date().toDateString();
+                        if (currentDate !== lastResetDate) {
+                            successfulRequestsCount = 0;
+                            lastResetDate = currentDate;
+                        }
+                        successfulRequestsCount++;
+                    }
+
+                    let statusInfo = `\n\n📊 *Statistiche Chiave API:*`;
+                    statusInfo += `\n• Richieste riuscite oggi: \`${successfulRequestsCount} / 1500 RPD\``;
+                    
+                    if (rateLimitResetTime && Date.now() < rateLimitResetTime.getTime()) {
+                        const secondsLeft = Math.ceil((rateLimitResetTime.getTime() - Date.now()) / 1000);
+                        statusInfo += `\n⏳ *Limite superato!* Operatività ristabilita tra circa: \`${secondsLeft} secondi\``;
+                    } else {
+                        statusInfo += `\n• Limite chiave gratuita: \`15 RPM / 1.500 RPD\``;
+                    }
+
+                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini IA**:\n\n${aiResponse}${statusInfo}`);
 
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
@@ -893,15 +923,40 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const data = await response.json();
                     
                     let webAnswer = "";
+                    let isSuccess = false;
+
                     if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
                         webAnswer = data.candidates[0].content.parts[0].text;
+                        isSuccess = true;
                     } else if (data?.error?.message) {
                         webAnswer = `⚠️ Errore API: ${data.error.message}`;
+                        if (data.error.code === 429) {
+                            rateLimitResetTime = new Date(Date.now() + 60000);
+                        }
                     } else {
                         webAnswer = "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
                     }
 
-                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Gemini Web**:\n\n${webAnswer}`);
+                    if (isSuccess) {
+                        const currentDate = new Date().toDateString();
+                        if (currentDate !== lastResetDate) {
+                            successfulRequestsCount = 0;
+                            lastResetDate = currentDate;
+                        }
+                        successfulRequestsCount++;
+                    }
+
+                    let statusInfo = `\n\n📊 *Statistiche Chiave API:*`;
+                    statusInfo += `\n• Richieste riuscite oggi: \`${successfulRequestsCount} / 1500 RPD\``;
+                    
+                    if (rateLimitResetTime && Date.now() < rateLimitResetTime.getTime()) {
+                        const secondsLeft = Math.ceil((rateLimitResetTime.getTime() - Date.now()) / 1000);
+                        statusInfo += `\n⏳ *Limite superato!* Operatività ristabilita tra circa: \`${secondsLeft} secondi\``;
+                    } else {
+                        statusInfo += `\n• Limite chiave gratuita: \`15 RPM / 1.500 RPD\``;
+                    }
+
+                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Gemini Web**:\n\n${webAnswer}${statusInfo}`);
 
                 } catch (error) {
                     console.error("Errore Web Search Gemini:", error);
