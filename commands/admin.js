@@ -636,10 +636,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !clearalltesto [parola] 🔍 - Elimina per tutti i messaggi con la parola indicata
 - !clearsender @utente (o !cleardue) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
 
-🤖 INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 2.5 FLASH)
+🤖 INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI FLASH)
 - !setgeminiak [chiave] 🔑 - Imposta la chiave API direttamente in chat privata
-- !parla [domanda] (o !ia [domanda]) 💡 - Chatta con Google Gemini 2.5 Flash
-- !cerca [query] (o !web [query]) 🌐 - Cerca informazioni ed elabora risposte via Gemini 2.5 Flash
+- !parla [domanda] (o !ia [domanda]) 💡 - Chatta con Google Gemini
+- !cerca [query] (o !web [query]) 🌐 - Cerca informazioni ed elabora risposte via Gemini
 
 ⚙️ GESTIONE AMMINISTRATORI
 - !promuovi @utente ⭐ - Promuove l'utente amministratore
@@ -814,7 +814,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json'
@@ -877,7 +877,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 try {
                     const prompt = `Effettua una ricerca aggiornata e rispondi in modo preciso ed esauriente in italiano alla seguente richiesta: ${searchQuery}`;
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json'
