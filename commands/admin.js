@@ -821,15 +821,24 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         },
                         body: JSON.stringify({
                             contents: [{
+                                role: 'user',
                                 parts: [{ text: userQuery }]
                             }]
                         })
                     });
 
                     const data = await response.json();
-                    const aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta.";
+                    
+                    let aiResponse = "";
+                    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        aiResponse = data.candidates[0].content.parts[0].text;
+                    } else if (data?.error?.message) {
+                        aiResponse = `⚠️ Errore API: ${data.error.message}`;
+                    } else {
+                        aiResponse = "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
+                    }
 
-                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini 2.5 Flash**:\n\n${aiResponse}`);
+                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini IA**:\n\n${aiResponse}`);
 
                 } catch (error) {
                     console.error("Errore API Gemini:", error);
@@ -875,13 +884,22 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         },
                         body: JSON.stringify({
                             contents: [{
+                                role: 'user',
                                 parts: [{ text: prompt }]
                             }]
                         })
                     });
 
                     const data = await response.json();
-                    const webAnswer = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta.";
+                    
+                    let webAnswer = "";
+                    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                        webAnswer = data.candidates[0].content.parts[0].text;
+                    } else if (data?.error?.message) {
+                        webAnswer = `⚠️ Errore API: ${data.error.message}`;
+                    } else {
+                        webAnswer = "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
+                    }
 
                     await sendHumanMessage(sock, chatJid, `🌐 **Risposta Gemini Web**:\n\n${webAnswer}`);
 
