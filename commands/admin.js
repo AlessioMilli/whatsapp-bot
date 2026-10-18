@@ -929,7 +929,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 }
 
                 try {
-                    // 1. Riconoscimento dei media inviati o quotati (Immagine, Audio/Vocale, Video)
                     const msgType = m.message?.imageMessage ? 'image' :
                                     m.message?.audioMessage ? 'audio' :
                                     m.message?.videoMessage ? 'video' : null;
@@ -942,7 +941,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     let mediaInlineData = null;
                     let activeType = msgType || quotedType;
 
-                    // 2. Download del file multimediale tramite Baileys se presente
                     if (activeType) {
                         const messageToDownload = msgType ? m : { message: quotedMsg };
                         const buffer = await downloadMediaMessage(
@@ -953,7 +951,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         );
 
                         let mimeType = "image/jpeg";
-                        if (activeType === 'audio') mimeType = "audio/mp4"; // Supporta audio e vocali (.ogg, .mp4, .m4a)
+                        if (activeType === 'audio') mimeType = "audio/mp4";
                         if (activeType === 'video') mimeType = "video/mp4";
 
                         mediaInlineData = {
@@ -964,7 +962,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         };
                     }
 
-                    // 3. Pulizia ed estrazione del prompt di testo
                     let userQuery = messageText.replace(/^(?:!parla|!ia)/i, '').trim();
 
                     if (!userQuery && mediaInlineData) {
@@ -982,7 +979,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                     await sendHumanMessage(sock, chatJid, "⏳ Elaborazione in corso (analisi file e ricerca web se necessaria)...");
 
-                    // 4. Preparazione delle parti della richiesta per l'API di Gemini 3.8 Flash
                     const partsArray = [{ text: userQuery }];
                     if (mediaInlineData) {
                         partsArray.push(mediaInlineData);
@@ -998,7 +994,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                                 role: 'user',
                                 parts: partsArray
                             }],
-                            // Abilita la ricerca sul web (Google Search Grounding)
                             tools: [{ googleSearch: {} }]
                         })
                     });
