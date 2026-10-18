@@ -25,6 +25,46 @@ function loadConfig() {
 const savedConfig = loadConfig();
 global.geminiApiKey = savedConfig.geminiApiKey || "";
 
+// --- LISTA DI SICUREZZA DEI 14 GRUPPI BLOCCATI ---
+const HARDCODED_DISABLED_GROUPS = [
+    "120363426442572433@g.us",
+    "120363410848657411@g.us",
+    "120363413621287894@g.us",
+    "120363412255572937@g.us",
+    "120363410702791250@g.us",
+    "120363428389061514@g.us",
+    "120363431216750217@g.us",
+    "120363411054241675@g.us",
+    "120363427130136369@g.us",
+    "120363411329771761@g.us",
+    "120363332649453382@g.us",
+    "120363407897822981@g.us",
+    "120363412117305069@g.us",
+    "120363428799360923@g.us"
+];
+
+// Funzione di verifica per controllare se un gruppo è bloccato
+function isGroupDisabled(chatJid) {
+    if (!chatJid) return false;
+    
+    // Controlla nella lista di sicurezza interna
+    if (HARDCODED_DISABLED_GROUPS.includes(chatJid)) {
+        return true;
+    }
+
+    // Controlla nel file config.json aggiornato
+    try {
+        const currentConfig = loadConfig();
+        if (currentConfig.disabledGroups && Array.isArray(currentConfig.disabledGroups)) {
+            return currentConfig.disabledGroups.includes(chatJid);
+        }
+    } catch (e) {
+        console.error("Errore nel controllo dei gruppi disattivati:", e);
+    }
+    
+    return false;
+}
+
 // 1. Configurazione Server Express per UptimeRobot e Pagina QR
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -116,9 +156,14 @@ async function startBot() {
         }
     });
 
-    // Ascolto degli eventi sui partecipanti (benvenuto automatico)
+    // Ascolto degli eventi sui partecipanti (benvenuto automatico bloccato se il gruppo è in lista nera)
     sock.ev.on('group-participants.update', async (event) => {
         try {
+            // 🛑 SE IL GRUPPO È BLOCCATO, NON INVIA MAI IL BENVENUTO
+            if (isGroupDisabled(event.id)) {
+                return;
+            }
+
             if (event.action === 'add') {
                 const fakeStubMsg = {
                     key: {
@@ -143,6 +188,11 @@ async function startBot() {
 
             const chatJid = m.key.remoteJid;
             if (!chatJid) return;
+
+            // 🛑 SE IL GRUPPO È NELLA LISTA DEI BLOCCATI, IGNORA COMPLETAMENTE OGGI E DOPO OGNI RIAVVIO
+            if (isGroupDisabled(chatJid)) {
+                return; 
+            }
 
             if (!m.key.fromMe) {
                 if (chatJid.endsWith('@newsletter') || chatJid.includes('@broadcast') || chatJid.includes('@lid')) {
