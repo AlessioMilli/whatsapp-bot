@@ -125,6 +125,7 @@ function getGroupConfig(chatJid) {
         groupsConfig.set(chatJid, {
             linkFilter: false,
             photoFilter: false,
+            photoRestrictedUsers: new Set(), // 📸 Lista utenti con blocco foto specifico
             cooldownEnabled: false,
             cooldownTime: 4000,
             waitingForTagAll: new Set(),
@@ -156,6 +157,10 @@ if (fs.existsSync(STATE_FILE)) {
             for (let [gId, gConf] of Object.entries(savedState.groupsConfig)) {
                 let conf = getGroupConfig(gId);
                 conf.onlyAdminMode = gConf.onlyAdminMode || false;
+                conf.photoFilter = gConf.photoFilter || false;
+                if (gConf.photoRestrictedUsers) {
+                    conf.photoRestrictedUsers = new Set(gConf.photoRestrictedUsers);
+                }
                 if (gConf.protectedUsers) {
                     conf.protectedUsers = new Set(gConf.protectedUsers);
                 }
@@ -176,6 +181,8 @@ function saveBotState() {
         for (let [gId, conf] of groupsConfig.entries()) {
             stateObj.groupsConfig[gId] = {
                 onlyAdminMode: conf.onlyAdminMode,
+                photoFilter: conf.photoFilter,
+                photoRestrictedUsers: Array.from(conf.photoRestrictedUsers),
                 protectedUsers: Array.from(conf.protectedUsers)
             };
         }
@@ -343,13 +350,16 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
-        // 📸 CONTROLLO ANTIPHOTO
-        if (isGroup && config.photoFilter && m.message?.imageMessage && !isOwner(sender, sock)) {
-            try {
-                await sock.sendMessage(chatJid, { delete: m.key });
-                await sendHumanMessage(sock, chatJid, `⚠️ @${sender.split('@')[0]}, non puoi inviare foto senza autorizzazione! Il messaggio è stato rimosso automaticamente per tutelare la privacy.`, { mentions: [sender] });
-                return true;
-            } catch (err) {}
+        // 📸 CONTROLLO ANTIPHOTO (Globale per il gruppo o per utente specifico)
+        if (isGroup && m.message?.imageMessage && !isOwner(sender, sock)) {
+            const isUserRestricted = config.photoRestrictedUsers && config.photoRestrictedUsers.has(sender);
+            if (config.photoFilter || isUserRestricted) {
+                try {
+                    await sock.sendMessage(chatJid, { delete: m.key });
+                    await sendHumanMessage(sock, chatJid, `⚠️ @${sender.split('@')[0]}, non puoi inviare foto in questo gruppo! Il messaggio è stato rimosso per tutelare la privacy.`, { mentions: [sender] });
+                    return true;
+                } catch (err) {}
+            }
         }
 
         if (isGroup && !m.key.fromMe) {
@@ -740,7 +750,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 - !setname [nome] 🏷 - Cambia istantaneamente il nome del gruppo
 - !lockinfo / !unlockinfo 🔒 - Blocca o sblocca i dettagli del gruppo
 - !link on/off 🌐 - Cancellazione automatica link esterni
-- !antiphoto on/off 📸 - Blocco automatico foto non autorizzate
+- !antiphoto on/off (@utente) 📸 - Blocco automatico foto non autorizzate (globale o utente)
 - !cooldown on/off ⏱ - Limite tempo antispam tra comandi
 
 🆔 IDENTIFICAZIONE, AGGIORNAMENTO E COMANDI EXTRA
@@ -1496,14 +1506,33 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
 
             case '!antiphoto': {
-                if (isGroup) {
-                    if (args[1] === 'on') {
+                if (!isGroup) return true;
+
+                const mode = args[1]?.toLowerCase();
+
+                if (mode === 'on') {
+                    if (targetMention) {
+                        config.photoRestrictedUsers.add(targetMention);
+                        saveBotState();
+                        await sendHumanMessage(sock, chatJid, `📸 Protezione anti-foto attivata specificamente per l'utente @${targetMention.split('@')[0]} in questo gruppo.`, { mentions: [targetMention] });
+                    } else {
                         config.photoFilter = true;
-                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto non autorizzate attivata in questo gruppo.");
-                    } else if (args[1] === 'off') {
-                        config.photoFilter = false;
-                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto disattivata in questo gruppo.");
+                        saveBotState();
+                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto non autorizzate attivata a livello globale in questo gruppo.");
                     }
+                } else if (mode === 'off') {
+                    if (targetMention) {
+                        config.photoRestrictedUsers.delete(targetMention);
+                        saveBotState();
+                        await sendHumanMessage(sock, chatJid, `📸 Protezione anti-foto disattivata per l'utente @${targetMention.split('@')[0]} in questo gruppo.`, { mentions: [targetMention] });
+                    } else {
+                        config.photoFilter = false;
+                        config.photoRestrictedUsers.clear();
+                        saveBotState();
+                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto completamente disattivata per questo gruppo.");
+                    }
+                } else {
+                    await sendHumanMessage(sock, chatJid, "⚠️ Uso corretto:\n• `!antiphoto on` (Attiva per tutto il gruppo)\n• `!antiphoto on @utente` (Attiva solo per l'utente taggato)\n• `!antiphoto off` (Disattiva per tutto il gruppo)\n• `!antiphoto off @utente` (Disattiva per l'utente taggato)");
                 }
                 return true;
             }
