@@ -20,7 +20,7 @@ function savePhoneBlacklist(blacklist) {
     fs.writeFileSync(PHONE_BLACKLIST_FILE, JSON.stringify(blacklist, null, 2));
 }
 
-// Funzione per recuperare la chiave API di Google Gemini (da Render, da globale o da file locale)
+// Funzione per recuperare la chiave API di Google Gemini
 function getApiKey() {
     if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
     if (global.geminiApiKey) return global.geminiApiKey;
@@ -33,12 +33,12 @@ function getApiKey() {
     return "";
 }
 
-// 📊 Variabili per il tracciamento dei crediti e dei limiti API gratuiti
+// 📊 Variabili per il tracciamento dei crediti API
 let successfulRequestsCount = 0;
 let lastResetDate = new Date().toDateString();
 let rateLimitResetTime = null;
 
-// ⏰ Gestione degli orari di spegnimento/accensione automatici (default: 21:30 e 13:30)
+// ⏰ Gestione degli orari di spegnimento/accensione automatici
 let scheduleConfig = {
     shutdownTime: "21:30",
     startupTime: "13:30"
@@ -58,7 +58,6 @@ function saveScheduleConfig() {
     } catch (e) {}
 }
 
-// Controllo automatico in background degli orari programmati (ogni 30 secondi)
 let dailyAutomationInterval = setInterval(() => {
     const now = new Date();
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -67,37 +66,30 @@ let dailyAutomationInterval = setInterval(() => {
         for (let [gId, conf] of groupsConfig.entries()) {
             conf.isInactive = true;
         }
-        console.log(`🌙 [AUTOMAZIONE] Orario di spegnimento raggiunto (${currentTime}). Bot disattivato automaticamente.`);
     }
 
     if (scheduleConfig.startupTime && currentTime === scheduleConfig.startupTime) {
         for (let [gId, conf] of groupsConfig.entries()) {
             conf.isInactive = false;
         }
-        console.log(`☀️ [AUTOMAZIONE] Orario di riaccensione raggiunto (${currentTime}). Bot riattivato automaticamente.`);
     }
 }, 30000);
 
-// Strutture dati globali di base
 const blacklist = new Set();
 const warnings = new Map();
 const mutedUsers = new Set();
 const cooldowns = new Map();
-const aiCooldowns = new Map(); // Cooldown specifico per i comandi IA (15 secondi)
+const aiCooldowns = new Map();
 
-// Mappa per i comandi personalizzati dinamici (comando -> risposta)
 const customCommands = new Map();
 
-// Caricamento dei comandi personalizzati salvati
 if (fs.existsSync(CUSTOM_COMMANDS_FILE)) {
     try {
         const savedCmds = JSON.parse(fs.readFileSync(CUSTOM_COMMANDS_FILE, 'utf8'));
         for (let [cmd, resp] of Object.entries(savedCmds)) {
             customCommands.set(cmd.toLowerCase(), resp);
         }
-    } catch (e) {
-        console.error("Errore nel caricamento dei comandi personalizzati:", e);
-    }
+    } catch (e) {}
 }
 
 function saveCustomCommands() {
@@ -107,17 +99,12 @@ function saveCustomCommands() {
             obj[cmd] = resp;
         }
         fs.writeFileSync(CUSTOM_COMMANDS_FILE, JSON.stringify(obj, null, 2));
-    } catch (e) {
-        console.error("Errore nel salvataggio dei comandi personalizzati:", e);
-    }
+    } catch (e) {}
 }
 
-// Archivi globali per il tracciamento in tempo reale dei messaggi
 const savedGroups = new Map();
-const groupMessages = new Map();     // Traccia i messaggi degli utenti nei gruppi (chatJid -> Map<senderJid, Array>)
-const botSentMessages = new Map();   // Traccia i messaggi inviati dal bot (chatJid -> Array)
-
-// Gestione delle configurazioni specifiche per ogni singolo gruppo (chatJid -> impostazioni)
+const groupMessages = new Map();
+const botSentMessages = new Map();
 const groupsConfig = new Map();
 
 function getGroupConfig(chatJid) {
@@ -125,14 +112,14 @@ function getGroupConfig(chatJid) {
         groupsConfig.set(chatJid, {
             linkFilter: false,
             photoFilter: false,
-            photoRestrictedUsers: new Set(), // 📸 Lista utenti con blocco foto specifico
+            photoRestrictedUsers: new Set(),
             cooldownEnabled: false,
             cooldownTime: 4000,
             waitingForTagAll: new Set(),
             waitingForSetName: new Set(),
             isInactive: false,
             isLocked: false,
-            onlyAdminMode: false, // 🔒 Riservato solo agli admin se attivo
+            onlyAdminMode: false,
             welcomeEnabled: true,
             protectionEnabled: true,
             offlineMode: false,
@@ -142,11 +129,9 @@ function getGroupConfig(chatJid) {
     return groupsConfig.get(chatJid);
 }
 
-// Il tuo numero impostato per il bot
 let OWNER_JID = "393534467571@s.whatsapp.net";
 global.extraOwners = global.extraOwners || new Set([OWNER_JID]);
 
-// Caricamento dello stato salvato (protezioni, co-owner e impostazioni gruppo) se esiste
 if (fs.existsSync(STATE_FILE)) {
     try {
         const savedState = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
@@ -166,12 +151,9 @@ if (fs.existsSync(STATE_FILE)) {
                 }
             }
         }
-    } catch (e) {
-        console.error("Errore nel caricamento dello stato salvato:", e);
-    }
+    } catch (e) {}
 }
 
-// Funzione per salvare lo stato persistente
 function saveBotState() {
     try {
         const stateObj = {
@@ -187,9 +169,7 @@ function saveBotState() {
             };
         }
         fs.writeFileSync(STATE_FILE, JSON.stringify(stateObj, null, 2));
-    } catch (e) {
-        console.error("Errore nel salvataggio dello stato:", e);
-    }
+    } catch (e) {}
 }
 
 const isOwner = (jid, sock) => {
@@ -204,28 +184,25 @@ const isOwner = (jid, sock) => {
     return false;
 };
 
-// Funzione di protezione aggiornata: il proprietario e gli extraOwners sono protetti SEMPRE
 const isProtected = (jid, config) => {
     return isOwner(jid) || config.protectedUsers.has(jid);
 };
 
-// 🤖 STRATEGIA ANTI-BAN CORRETTA: Sottoscrizione + Digitazione finta rapida (2-3 secondi)
+// ⚡ MOSTRA "STA SCRIVENDO" ED INVIA IMMEDIATAMENTE SENZA PAUSE FISSE
 async function sendHumanMessage(sock, chatJid, content, options = {}) {
     try {
-        await sock.presenceSubscribe(chatJid);
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Mostra "sta scrivendo..." all'istante
+        sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
+        
+        // Invia subito il messaggio
+        const result = await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
 
-        await sock.sendPresenceUpdate('composing', chatJid);
+        // Disattiva "sta scrivendo..." subito dopo l'invio
+        sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
 
-        // Ritardo casuale impostato tra 2000 ms (2 secondi) e 3000 ms (3 secondi)
-        const randomDelay = Math.floor(Math.random() * (3000 - 2000 + 1)) + 2000;
-        await new Promise(resolve => setTimeout(resolve, randomDelay));
-
-        await sock.sendPresenceUpdate('paused', chatJid);
-
-        return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
+        return result;
     } catch (err) {
-        console.error("Errore invio presenza:", err);
+        console.error("Errore invio messaggio:", err);
         return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
     }
 }
@@ -236,7 +213,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         if (isGroup === undefined) isGroup = chatJid.endsWith('@g.us');
         if (!sender) sender = m.key.participant || chatJid;
 
-        // 🔍 SALVATAGGIO AUTOMATICO ID GRUPPO
         if (isGroup) {
             if (!savedGroups.has(chatJid)) {
                 try {
@@ -254,7 +230,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEGLI UTENTI
         if (isGroup && chatJid && sender && m.key && m.key.id) {
             if (!groupMessages.has(chatJid)) groupMessages.set(chatJid, new Map());
             let chatMap = groupMessages.get(chatJid);
@@ -272,7 +247,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             if (userMsgs.length > 250) userMsgs.shift();
         }
 
-        // 📝 TRACCIAMENTO IN TEMPO REALE DEI MESSAGGI DEL BOT
         if (chatJid && m.key && m.key.fromMe && m.key.id) {
             if (!botSentMessages.has(chatJid)) botSentMessages.set(chatJid, []);
             let botList = botSentMessages.get(chatJid);
@@ -285,7 +259,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             }
         }
 
-        // 🥷 Controllo presenza di Aleh (+39 392 491 1895) nel gruppo
         const alehJid = "3924911895@s.whatsapp.net";
         if (isGroup && !isOwner(sender, sock)) {
             try {
@@ -325,7 +298,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             return mentions;
         };
 
-        // 👋 Benvenuto automatico
         if (isGroup && m.messageStubType === 27 && config.welcomeEnabled) {
             const newMemberJid = m.messageStubParameters?.[0];
             if (newMemberJid) {
@@ -334,7 +306,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const desc = metadata.desc ? metadata.desc.trim() : "";
                     const groupName = metadata.subject || "questo gruppo";
                     
-                    let welcomeText = `Buongiorno @${newMemberJid.split('@')[0]} e benvenuto/a nel gruppo${groupName}\n\n`;
+                    let welcomeText = `Buongiorno @${newMemberJid.split('@')[0]} e benvenuto/a nel gruppo ${groupName}\n\n`;
                     if (desc) welcomeText += `Leggi con attenzione le regole: ${desc}`;
 
                     await sendHumanMessage(sock, chatJid, welcomeText, { mentions: [newMemberJid] });
@@ -350,7 +322,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
-        // 📸 CONTROLLO ANTIPHOTO (Globale per il gruppo o per utente specifico)
         if (isGroup && m.message?.imageMessage && !isOwner(sender, sock)) {
             const isUserRestricted = config.photoRestrictedUsers && config.photoRestrictedUsers.has(sender);
             if (config.photoFilter || isUserRestricted) {
@@ -383,7 +354,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
         if (!messageText) return false;
 
-        // 🔒 CONTROLLO MODALITÀ ONLY ADMIN
         if (isGroup && config.onlyAdminMode && messageText.startsWith('!') && !isOwner(sender, sock)) {
             try {
                 const metadata = await sock.groupMetadata(chatJid);
@@ -396,16 +366,13 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     await sendHumanMessage(sock, chatJid, `⚠️ In questo gruppo la gestione dei comandi del bot è riservata unicamente agli **amministratori**.`, { mentions: [sender] });
                     return true;
                 }
-            } catch (e) {
-                console.error("Errore verifica admin per onlyAdminMode:", e);
-            }
+            } catch (e) {}
         }
 
         const args = messageText.trim().split(/ +/);
         const command = args[0].toLowerCase();
         const targetMention = getTargetJid();
 
-        // 🧠 Controllo se è un comando personalizzato dinamico
         if (customCommands.has(command)) {
             const customResponse = customCommands.get(command);
             await sendHumanMessage(sock, chatJid, customResponse);
@@ -637,7 +604,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                         await sendHumanMessage(sock, chatJid, response);
                     } catch (error) {
-                        console.error("Errore nel recupero dei gruppi:", error);
                         await sendHumanMessage(sock, chatJid, "❌ Errore durante il recupero della lista dei gruppi.");
                     }
                     return true;
@@ -654,7 +620,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         const userQuery = args.slice(2).join(' ').replace(/[^0-9a-zA-Z]/g, '').trim();
                         
                         if (!userQuery) {
-                            await sendHumanMessage(sock, chatJid, "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567` me");
+                            await sendHumanMessage(sock, chatJid, "⚠️ Inserisci il nome o il numero da cercare.\nEsempio: `!getjid utente Mario` oppure `!getjid numero 393331234567`");
                             return true;
                         }
 
@@ -695,7 +661,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                         await sendHumanMessage(sock, chatJid, resText);
                     } catch (err) {
-                        console.error("Errore ricerca utente/numero:", err);
                         await sendHumanMessage(sock, chatJid, "❌ Errore durante la ricerca.");
                     }
                     return true;
@@ -812,7 +777,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     
                     await sendHumanMessage(sock, chatJid, "✅ **Chiave API di Google Gemini salvata con successo!**\nTutte le funzionalità dell'intelligenza artificiale sono ora sbloccate e pronte all'uso.");
                 } catch (err) {
-                    console.error("Errore salvataggio chiave API:", err);
                     await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante il salvataggio della chiave.");
                 }
                 return true;
@@ -847,7 +811,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     } catch (e) {}
                 }
 
-                await sendHumanMessage(sock, chatJid, `✅ Il numero +${targetPhone} è stato inserito nella blacklist permanente. Se proveranno ad aggiungerlo, il bot lo ribannerà all'istante.`);
+                await sendHumanMessage(sock, chatJid, `✅ Il numero +${targetPhone} è stato inserito nella blacklist permanente.`);
                 return true;
             }
 
@@ -887,32 +851,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const rawArgs = messageText.replace(/^(?:!annuncio|!news)/i, '').trim();
                 const parts = rawArgs.split('|');
                 
-                const type = parts[0]?.trim()?.toLowerCase(); // 'nuova' o 'rimossa'
-                const details = parts[1]?.trim(); // Il nome e la descrizione
+                const type = parts[0]?.trim()?.toLowerCase();
+                const details = parts[1]?.trim();
 
                 if (!type || !details || (type !== 'nuova' && type !== 'rimossa')) {
                     await sendHumanMessage(sock, chatJid, 
                         "⚠️ Uso non corretto del comando.\n\n" +
                         "📌 **Esempi di utilizzo:**\n" +
-                        "• Per una nuova funzione:\n`!annuncio nuova !parla multimodale | Ora puoi inviare foto, vocali e video e il bot li analizzerà!`\n\n" +
-                        "• Per una funzione rimossa:\n`!annuncio rimossa Comando X | Rimosso per manutenzione dei server.`"
+                        "• `!annuncio nuova !parla multimodale | Ora puoi inviare foto, vocali e video!`\n" +
+                        "• `!annuncio rimossa Comando X | Rimosso per manutenzione.`"
                     );
                     return true;
                 }
 
                 try {
-                    let announcementText = "";
-                    if (type === 'nuova') {
-                        announcementText = `✨ **AGGIORNAMENTO BOT: NUOVA FUNZIONE** ✨\n\n${details}\n\n🤖 *Prova subito a provarla qui in chat!*`;
-                    } else {
-                        announcementText = `🛠 **AGGIORNAMENTO BOT: FUNZIONE RIMOSSA** 🛠\n\n${details}\n\n📌 *Ci scusiamo per il disagio.*`;
-                    }
+                    let announcementText = type === 'nuova' 
+                        ? `✨ **AGGIORNAMENTO BOT: NUOVA FUNZIONE** ✨\n\n${details}\n\n🤖 *Prova subito a provarla qui in chat!*`
+                        : `🛠 **AGGIORNAMENTO BOT: FUNZIONE RIMOSSA** 🛠\n\n${details}\n\n📌 *Ci scusiamo per il disagio.*`;
 
-                    // Invia il messaggio unicamente nel gruppo in cui è stato digitato il comando
                     await sendHumanMessage(sock, chatJid, announcementText);
-
                 } catch (error) {
-                    console.error("Errore durante l'invio dell'annuncio:", error);
                     await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante l'invio dell'annuncio.");
                 }
                 return true;
@@ -961,9 +919,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             { logger: console }
                         );
 
-                        let mimeType = "image/jpeg";
-                        if (activeType === 'audio') mimeType = "audio/mp4";
-                        if (activeType === 'video') mimeType = "video/mp4";
+                        let mimeType = activeType === 'audio' ? "audio/mp4" : activeType === 'video' ? "video/mp4" : "image/jpeg";
 
                         mediaInlineData = {
                             inlineData: {
@@ -984,11 +940,9 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                             userQuery = "Analizza questa immagine, risolvi l'esercizio passo dopo passo o spiega il testo presente in essa.";
                         }
                     } else if (!userQuery) {
-                        await sendHumanMessage(sock, chatJid, "⚠️ Scrivi una domanda, un argomento o allega un'immagine/audio/video dopo il comando.\nEsempio: `!parla cos'è un buco nero?` oppure allega una foto con `!parla risolvi`.");
+                        await sendHumanMessage(sock, chatJid, "⚠️ Scrivi una domanda, un argomento o allega un'immagine/audio/video dopo il comando.");
                         return true;
                     }
-
-                    await sendHumanMessage(sock, chatJid, "⏳ Elaborazione in corso (analisi file e ricerca web se necessaria)...");
 
                     const partsArray = [{ text: userQuery }];
                     if (mediaInlineData) {
@@ -997,58 +951,20 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            contents: [{
-                                role: 'user',
-                                parts: partsArray
-                            }],
+                            contents: [{ role: 'user', parts: partsArray }],
                             tools: [{ googleSearch: {} }]
                         })
                     });
 
                     const data = await response.json();
                     
-                    let aiResponse = "";
-                    let isSuccess = false;
+                    let aiResponse = data?.candidates?.[0]?.content?.parts?.[0]?.text || 
+                                     (data?.error?.message ? `⚠️ Errore API: ${data.error.message}` : "Mi dispiace, non sono riuscito a elaborare una risposta valida.");
 
-                    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                        aiResponse = data.candidates[0].content.parts[0].text;
-                        isSuccess = true;
-                    } else if (data?.error?.message) {
-                        aiResponse = `⚠️ Errore API: ${data.error.message}`;
-                        if (data.error.code === 429) {
-                            rateLimitResetTime = new Date(Date.now() + 60000);
-                        }
-                    } else {
-                        aiResponse = "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
-                    }
-
-                    if (isSuccess) {
-                        const currentDate = new Date().toDateString();
-                        if (currentDate !== lastResetDate) {
-                            successfulRequestsCount = 0;
-                            lastResetDate = currentDate;
-                        }
-                        successfulRequestsCount++;
-                    }
-
-                    let statusInfo = `\n\n📊 *Statistiche Chiave API:*`;
-                    statusInfo += `\n• Richieste riuscite oggi: \`${successfulRequestsCount} / 1500 RPD\``;
-                    
-                    if (rateLimitResetTime && Date.now() < rateLimitResetTime.getTime()) {
-                        const secondsLeft = Math.ceil((rateLimitResetTime.getTime() - Date.now()) / 1000);
-                        statusInfo += `\n⏳ *Limite superato!* Operatività ristabilita tra circa: \`${secondsLeft} secondi\``;
-                    } else {
-                        statusInfo += `\n• Limite chiave gratuita: \`15 RPM / 1.500 RPD\``;
-                    }
-
-                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini IA (3.8 Flash)**:\n\n${aiResponse}${statusInfo}`);
-
+                    await sendHumanMessage(sock, chatJid, `🤖 **Google Gemini IA (3.8 Flash)**:\n\n${aiResponse}`);
                 } catch (error) {
-                    console.error("Errore API Gemini:", error);
                     await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la connessione con Google Gemini.");
                 }
                 return true;
@@ -1065,79 +981,26 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const GEMINI_API_KEY = getApiKey();
                 if (!GEMINI_API_KEY) {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata! Imposta la variabile GEMINI_API_KEY su Render o inviami in chat privata il comando !setgeminiak <tua_chiave>.");
+                    await sendHumanMessage(sock, chatJid, "⚠️ Nessuna chiave API configurata!");
                     return true;
-                }
-
-                if (!isOwner(sender, sock)) {
-                    const now = Date.now();
-                    const lastAiTime = aiCooldowns.get(sender) || 0;
-                    const cooldownTimeMs = 15000;
-                    
-                    if (now - lastAiTime < cooldownTimeMs) {
-                        const secondsLeft = Math.ceil((cooldownTimeMs - (now - lastAiTime)) / 1000);
-                        await sendHumanMessage(sock, chatJid, `⏳ Attendi altri ${secondsLeft} secondi prima di effettuare un'altra ricerca.`, { mentions: [sender] });
-                        return true;
-                    }
-                    aiCooldowns.set(sender, now);
                 }
 
                 try {
                     const prompt = `Effettua una ricerca aggiornata e rispondi in modo preciso ed esauriente in italiano alla seguente richiesta: ${searchQuery}`;
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${GEMINI_API_KEY}`, {
                         method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            contents: [{
-                                role: 'user',
-                                parts: [{ text: prompt }]
-                            }],
+                            contents: [{ role: 'user', parts: [{ text: prompt }] }],
                             tools: [{ googleSearch: {} }]
                         })
                     });
 
                     const data = await response.json();
-                    
-                    let webAnswer = "";
-                    let isSuccess = false;
+                    let webAnswer = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
 
-                    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                        webAnswer = data.candidates[0].content.parts[0].text;
-                        isSuccess = true;
-                    } else if (data?.error?.message) {
-                        webAnswer = `⚠️ Errore API: ${data.error.message}`;
-                        if (data.error.code === 429) {
-                            rateLimitResetTime = new Date(Date.now() + 60000);
-                        }
-                    } else {
-                        webAnswer = "Mi dispiace, non sono riuscito a elaborare una risposta valida.";
-                    }
-
-                    if (isSuccess) {
-                        const currentDate = new Date().toDateString();
-                        if (currentDate !== lastResetDate) {
-                            successfulRequestsCount = 0;
-                            lastResetDate = currentDate;
-                        }
-                        successfulRequestsCount++;
-                    }
-
-                    let statusInfo = `\n\n📊 *Statistiche Chiave API:*`;
-                    statusInfo += `\n• Richieste riuscite oggi: \`${successfulRequestsCount} / 1500 RPD\``;
-                    
-                    if (rateLimitResetTime && Date.now() < rateLimitResetTime.getTime()) {
-                        const secondsLeft = Math.ceil((rateLimitResetTime.getTime() - Date.now()) / 1000);
-                        statusInfo += `\n⏳ *Limite superato!* Operatività ristabilita tra circa: \`${secondsLeft} secondi\``;
-                    } else {
-                        statusInfo += `\n• Limite chiave gratuita: \`15 RPM / 1.500 RPD\``;
-                    }
-
-                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Gemini Web**:\n\n${webAnswer}${statusInfo}`);
-
+                    await sendHumanMessage(sock, chatJid, `🌐 **Risposta Gemini Web**:\n\n${webAnswer}`);
                 } catch (error) {
-                    console.error("Errore Web Search Gemini:", error);
                     await sendHumanMessage(sock, chatJid, "❌ Si è verificato un errore durante la richiesta.");
                 }
                 return true;
@@ -1150,13 +1013,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const inputArgs = messageText.replace(/^(?:!ripeti|!flood)/i, '').trim().split(/\s+/);
                 
                 if (inputArgs.length < 2) {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Uso corretto: !ripeti [il tuo messaggio] [numero di volte]\nEsempio: !ripeti Ciao a tutti 5");
+                    await sendHumanMessage(sock, chatJid, "⚠️ Uso corretto: !ripeti [messaggio] [numero]");
                     return true;
                 }
 
-                const countStr = inputArgs[inputArgs.length - 1];
-                const count = parseInt(countStr, 10);
-
+                const count = parseInt(inputArgs[inputArgs.length - 1], 10);
                 if (isNaN(count) || count <= 0 || count > 20) {
                     await sendHumanMessage(sock, chatJid, "⚠️ Inserisci un numero valido alla fine (massimo 20 volte).");
                     return true;
@@ -1164,59 +1025,34 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                 const textToRepeat = inputArgs.slice(0, inputArgs.length - 1).join(' ');
 
-                await sendHumanMessage(sock, chatJid, `🚀 Avvio invio: ripeterò il messaggio "${textToRepeat}" per ${count} volte.`);
-
                 for (let i = 1; i <= count; i++) {
-                    const customCommandTag = `!loop_${i}`;
-                    const finalMessage = `${textToRepeat} (${customCommandTag} - ${i}/${count})`;
-                    
-                    await sendHumanMessage(sock, chatJid, finalMessage);
-                    await new Promise(resolve => setTimeout(resolve, 800));
+                    await sendHumanMessage(sock, chatJid, `${textToRepeat} (!loop_${i} - ${i}/${count})`);
                 }
                 return true;
             }
 
             case '!clearsender':
             case '!cleardue': {
-                if (!isGroup) {
-                    await sendHumanMessage(sock, chatJid, "⚠ Questo comando può essere usato solo nei gruppi.");
-                    return true;
-                }
-
-                if (!targetMention) {
-                    await sendHumanMessage(sock, chatJid, "⚠ Tagga l'utente di cui vuoi cancellare tutti i messaggi salvati.\nEsempio: !clearsender @utente");
+                if (!isGroup || !targetMention) {
+                    await sendHumanMessage(sock, chatJid, "⚠ Tagga l'utente di cui vuoi cancellare i messaggi (es. !clearsender @utente).");
                     return true;
                 }
 
                 const chatMap = groupMessages.get(chatJid);
                 if (!chatMap || !chatMap.has(targetMention) || chatMap.get(targetMention).length === 0) {
-                    await sendHumanMessage(sock, chatJid, "⚠ Non ho trovato messaggi recenti salvati per questo utente in questa sessione.", { mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, "⚠ Nessun messaggio recente trovato per questo utente.", { mentions: [targetMention] });
                     return true;
                 }
 
                 const userMsgs = chatMap.get(targetMention);
-                const totalToDel = userMsgs.length;
-
-                await sendHumanMessage(sock, chatJid, `🧹 Avvio cancellazione di ${totalToDel} messaggi per l'utente...`, { mentions: [targetMention] });
-
-                let deletedCount = 0;
                 for (let msgObj of userMsgs) {
                     try {
-                        await sock.sendMessage(chatJid, { 
-                            delete: { 
-                                remoteJid: chatJid, 
-                                fromMe: false, 
-                                id: msgObj.id, 
-                                participant: targetMention 
-                            } 
-                        });
-                        deletedCount++;
-                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await sock.sendMessage(chatJid, { delete: { remoteJid: chatJid, fromMe: false, id: msgObj.id, participant: targetMention } });
                     } catch (err) {}
                 }
 
                 chatMap.set(targetMention, []);
-                await sendHumanMessage(sock, chatJid, `✅ Operazione completata: eliminati circa ${deletedCount} messaggi dell'utente.`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `✅ Messaggi dell'utente eliminati con successo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1224,37 +1060,25 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!botclean': {
                 const botList = botSentMessages.get(chatJid);
                 if (!botList || botList.length === 0) {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Non ci sono messaggi inviati da me memorizzati in questa chat.");
+                    await sendHumanMessage(sock, chatJid, "⚠️ Non ci sono messaggi inviati da me in questa chat.");
                     return true;
                 }
 
-                const totalBotMsgs = botList.length;
-                await sendHumanMessage(sock, chatJid, `🧹 Avvio rimozione di tutti i miei ${totalBotMsgs} messaggi inviati in questa chat...`);
-
-                let removedCount = 0;
                 for (let msgObj of botList) {
                     try {
-                        await sock.sendMessage(chatJid, { 
-                            delete: { 
-                                remoteJid: chatJid, 
-                                fromMe: true, 
-                                id: msgObj.id 
-                            } 
-                        });
-                        removedCount++;
-                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await sock.sendMessage(chatJid, { delete: { remoteJid: chatJid, fromMe: true, id: msgObj.id } });
                     } catch (e) {}
                 }
 
                 botSentMessages.set(chatJid, []);
-                await sendHumanMessage(sock, chatJid, `✅ Operazione completata: ho eliminato ${removedCount} messaggi miei.`);
+                await sendHumanMessage(sock, chatJid, `✅ Ho eliminato tutti i miei messaggi.`);
                 return true;
             }
 
             case '!mute': {
                 if (!targetMention) return true;
                 mutedUsers.add(targetMention);
-                await sendHumanMessage(sock, chatJid, `🔇 L'utente è stato mutato in questo gruppo.`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `🔇 L'utente è stato mutato.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1264,15 +1088,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 for (let u of mutedUsers) {
                     if (u === targetMention || u.split('@')[0] === targetClean) mutedUsers.delete(u);
                 }
-                await sendHumanMessage(sock, chatJid, `🔊 L'utente può tornare a scrivere in questo gruppo.`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `🔊 L'utente può tornare a scrivere.`, { mentions: [targetMention] });
                 return true;
             }
 
             case '!warn': {
                 if (!targetMention) return true;
-
                 if (isProtected(targetMention, config)) {
-                    await sendHumanMessage(sock, chatJid, `Non puoi ammonire l'owner o un utente protetto! 🛡️`, { mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, `Non puoi ammonire un utente protetto! 🛡️`, { mentions: [targetMention] });
                     return true;
                 }
 
@@ -1280,11 +1103,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 warnings.set(targetMention + chatJid, currentWarns);
 
                 if (currentWarns < 3) {
-                    await sendHumanMessage(sock, chatJid, `⚠ Avvertimento ${currentWarns}/3 registrato per l'utente in questo gruppo.`, { mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, `⚠ Avvertimento ${currentWarns}/3 registrato.`, { mentions: [targetMention] });
                 } else {
                     warnings.delete(targetMention + chatJid);
                     await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                    await sendHumanMessage(sock, chatJid, `🚨 3 avvertimenti superati: utente espulso da questo gruppo.`, { mentions: [targetMention] });
+                    await sendHumanMessage(sock, chatJid, `🚨 3 avvertimenti superati: utente espulso.`, { mentions: [targetMention] });
                 }
                 return true;
             }
@@ -1293,7 +1116,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!kick': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "remove");
-                await sendHumanMessage(sock, chatJid, `Utente rimosso da questo gruppo con successo.`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `Utente rimosso con successo.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1304,7 +1127,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const participants = metadata.participants.filter(p => !p.admin && !isProtected(p.id, config)).map(p => p.id);
                 if (participants.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, participants, "remove");
-                    await sendHumanMessage(sock, chatJid, "🧹 Membri non admin rimossi da questo gruppo");
+                    await sendHumanMessage(sock, chatJid, "🧹 Membri non admin rimossi.");
                 }
                 return true;
             }
@@ -1321,17 +1144,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!clearalltesto': {
-                const keyword = messageText.replace(/^!clearalltesto/i, '').trim();
-                if (!keyword) return true;
-                await sendHumanMessage(sock, chatJid, `🔍 Scansione avviata in questo gruppo per: ${keyword}`);
-                return true;
-            }
-
             case '!promuovi': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "promote");
-                await sendHumanMessage(sock, chatJid, `Utente promosso ad admin in questo gruppo.`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `Utente promosso ad admin.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1339,7 +1155,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!quickdemote': {
                 if (!isGroup || !targetMention) return true;
                 await sock.groupParticipantsUpdate(chatJid, [targetMention], "demote");
-                await sendHumanMessage(sock, chatJid, `Poteri revocati in questo gruppo.`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `Poteri revocati.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1348,14 +1164,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const targets = getAllMentionedJids();
                 if (targets.length > 0) {
                     await sock.groupParticipantsUpdate(chatJid, targets, "demote");
-                    await sendHumanMessage(sock, chatJid, `Admin multipli rimossi in questo gruppo.`);
+                    await sendHumanMessage(sock, chatJid, `Admin multipli rimossi.`);
                 }
-                return true;
-            }
-
-            case '!checkadmin': {
-                if (!isGroup) return true;
-                await sendHumanMessage(sock, chatJid, "Verifica completata: i comandi di moderazione sono liberi per tutti in questo gruppo.");
                 return true;
             }
 
@@ -1364,47 +1174,11 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const mode = args[1];
                 if (mode === 'on') {
                     await sock.groupSettingUpdate(chatJid, 'locked');
-                    await sendHumanMessage(sock, chatJid, "🔒 Info modificabili solo dagli admin in questo gruppo.");
+                    await sendHumanMessage(sock, chatJid, "🔒 Info modificabili solo dagli admin.");
                 } else if (mode === 'off') {
                     await sock.groupSettingUpdate(chatJid, 'unlocked');
-                    await sendHumanMessage(sock, chatJid, "🔓 Info modificabili da tutti in questo gruppo.");
+                    await sendHumanMessage(sock, chatJid, "🔓 Info modificabili da tutti.");
                 }
-                return true;
-            }
-
-            case '!approva': {
-                if (!isGroup) return true;
-                const mode = args[1];
-                if (mode === 'on' || mode === 'off') {
-                    await sock.groupJoinApprovalMode(chatJid, mode).catch(() => {});
-                    await sendHumanMessage(sock, chatJid, `📋 Approvazione membri impostata su ${mode} qui.`);
-                }
-                return true;
-            }
-
-            case '!addmember': {
-                if (!isGroup) return true;
-                const mode = args[1];
-                if (mode === 'on' || mode === 'off') {
-                    await sock.groupAddMode(chatJid, mode === 'on' ? 'admin_add' : 'all_member_add').catch(() => {});
-                    await sendHumanMessage(sock, chatJid, `➕ Aggiunta membri impostata su ${mode} qui.`);
-                }
-                return true;
-            }
-
-            case '!history': {
-                if (!isGroup) return true;
-                const mode = args[1];
-                if (mode === 'on' || mode === 'off') {
-                    await sock.groupMemberAddMode(chatJid, mode === 'on' ? 'prompt' : 'no_prompt').catch(() => {});
-                    await sendHumanMessage(sock, chatJid, `📜 Cronologia ai nuovi impostata su ${mode} qui.`);
-                }
-                return true;
-            }
-
-            case '!invitelink': {
-                if (!isGroup) return true;
-                await sendHumanMessage(sock, chatJid, `🔗 Link d'invito aggiornato per questo gruppo.`);
                 return true;
             }
 
@@ -1412,7 +1186,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 const userMessage = messageText.replace(/^!chiedialessio/i, '').trim();
                 if (userMessage) {
                     await sendHumanMessage(sock, OWNER_JID, `✉ Supporto da gruppo:\nUtente: @${sender.split('@')[0]}\nTesto:${userMessage}`, { mentions: [sender] });
-                    await sendHumanMessage(sock, chatJid, "✉ Messaggio inoltrato con successo ad Alessio.");
+                    await sendHumanMessage(sock, chatJid, "✉ Messaggio inoltrato ad Alessio.");
                 }
                 return true;
             }
@@ -1426,11 +1200,10 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
                     if (!inlineText) {
                         config.waitingForTagAll.add(sender);
-                        await sendHumanMessage(sock, chatJid, "📢 Che tipo di avviso vuoi che scriva? (Invia qui il testo dell'avviso, oppure scrivi direttamente il messaggio vicino al comando es. !tutti [tuo messaggio])");
+                        await sendHumanMessage(sock, chatJid, "📢 Scrivi il testo dell'avviso da inviare a tutti:");
                     } else {
                         let text = `📢 Attenzione a tutti ragazzi\n\n${inlineText}\n\n`;
                         for (let p of participants) text += `@${p.split('@')[0]} `;
-
                         await sendHumanMessage(sock, chatJid, text, { mentions: participants });
                     }
                 }
@@ -1440,10 +1213,6 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!poll': {
                 const pollData = messageText.replace(/^!poll/i, '').trim().split(/\s+/);
                 if (pollData[0] && pollData.slice(1).length > 1) {
-                    await sock.presenceSubscribe(chatJid);
-                    await sock.sendPresenceUpdate('composing', chatJid);
-                    await new Promise(resolve => setTimeout(resolve, 4000));
-                    await sock.sendPresenceUpdate('paused', chatJid);
                     await sock.sendMessage(chatJid, { poll: { name: pollData[0], values: pollData.slice(1) } });
                 }
                 return true;
@@ -1451,13 +1220,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!welcome': {
                 if (isGroup) {
-                    if (args[1] === 'on') {
-                        config.welcomeEnabled = true;
-                        await sendHumanMessage(sock, chatJid, "👋 Benvenuto attivato in questo gruppo.");
-                    } else if (args[1] === 'off') {
-                        config.welcomeEnabled = false;
-                        await sendHumanMessage(sock, chatJid, "👋 Benvenuto disattivato in questo gruppo.");
-                    }
+                    config.welcomeEnabled = args[1] === 'on';
+                    await sendHumanMessage(sock, chatJid, `👋 Benvenuto ${args[1] === 'on' ? 'attivato' : 'disattivato'}.`);
                 }
                 return true;
             }
@@ -1467,7 +1231,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                     const newName = messageText.replace(/^!setname/i, '').trim();
                     if (!newName) {
                         config.waitingForSetName.add(sender);
-                        await sendHumanMessage(sock, chatJid, "🏷 Scrivi il nuovo nome per questo gruppo.");
+                        await sendHumanMessage(sock, chatJid, "🏷 Scrivi il nuovo nome per questo gruppo:");
                     } else {
                         await sock.groupUpdateSubject(chatJid, newName);
                         await sendHumanMessage(sock, chatJid, `🏷 Nome del gruppo aggiornato.`);
@@ -1476,76 +1240,49 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 return true;
             }
 
-            case '!lockinfo': {
-                if (isGroup) {
-                    await sock.groupSettingUpdate(chatJid, 'locked');
-                    await sendHumanMessage(sock, chatJid, "🔒 Info bloccate per questo gruppo.");
-                }
-                return true;
-            }
-
-            case '!unlockinfo': {
-                if (isGroup) {
-                    await sock.groupSettingUpdate(chatJid, 'unlocked');
-                    await sendHumanMessage(sock, chatJid, "🔓 Info sbloccate per questo gruppo.");
-                }
-                return true;
-            }
-
             case '!link': {
                 if (isGroup) {
-                    if (args[1] === 'on') {
-                        config.linkFilter = true;
-                        await sendHumanMessage(sock, chatJid, "🌐 Filtro link attivato in questo gruppo.");
-                    } else if (args[1] === 'off') {
-                        config.linkFilter = false;
-                        await sendHumanMessage(sock, chatJid, "🌐 Filtro link disattivato in questo gruppo.");
-                    }
+                    config.linkFilter = args[1] === 'on';
+                    await sendHumanMessage(sock, chatJid, `🌐 Filtro link ${args[1] === 'on' ? 'attivato' : 'disattivato'}.`);
                 }
                 return true;
             }
 
             case '!antiphoto': {
                 if (!isGroup) return true;
-
                 const mode = args[1]?.toLowerCase();
 
                 if (mode === 'on') {
                     if (targetMention) {
                         config.photoRestrictedUsers.add(targetMention);
                         saveBotState();
-                        await sendHumanMessage(sock, chatJid, `📸 Protezione anti-foto attivata specificamente per l'utente @${targetMention.split('@')[0]} in questo gruppo.`, { mentions: [targetMention] });
+                        await sendHumanMessage(sock, chatJid, `📸 Protezione anti-foto attivata per @${targetMention.split('@')[0]}.`, { mentions: [targetMention] });
                     } else {
                         config.photoFilter = true;
                         saveBotState();
-                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto non autorizzate attivata a livello globale in questo gruppo.");
+                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto globale attivata nel gruppo.");
                     }
                 } else if (mode === 'off') {
                     if (targetMention) {
                         config.photoRestrictedUsers.delete(targetMention);
                         saveBotState();
-                        await sendHumanMessage(sock, chatJid, `📸 Protezione anti-foto disattivata per l'utente @${targetMention.split('@')[0]} in questo gruppo.`, { mentions: [targetMention] });
+                        await sendHumanMessage(sock, chatJid, `📸 Protezione anti-foto disattivata per @${targetMention.split('@')[0]}.`, { mentions: [targetMention] });
                     } else {
                         config.photoFilter = false;
                         config.photoRestrictedUsers.clear();
                         saveBotState();
-                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto completamente disattivata per questo gruppo.");
+                        await sendHumanMessage(sock, chatJid, "📸 Protezione anti-foto completamente disattivata.");
                     }
                 } else {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Uso corretto:\n• `!antiphoto on` (Attiva per tutto il gruppo)\n• `!antiphoto on @utente` (Attiva solo per l'utente taggato)\n• `!antiphoto off` (Disattiva per tutto il gruppo)\n• `!antiphoto off @utente` (Disattiva per l'utente taggato)");
+                    await sendHumanMessage(sock, chatJid, "⚠️ Uso: `!antiphoto on`, `!antiphoto on @utente`, `!antiphoto off`, `!antiphoto off @utente`");
                 }
                 return true;
             }
 
             case '!cooldown': {
                 if (isGroup) {
-                    if (args[1] === 'on') {
-                        config.cooldownEnabled = true;
-                        await sendHumanMessage(sock, chatJid, "⏱ Cooldown antispam attivato in questo gruppo.");
-                    } else if (args[1] === 'off') {
-                        config.cooldownEnabled = false;
-                        await sendHumanMessage(sock, chatJid, "⏱ Cooldown disattivato in questo gruppo.");
-                    }
+                    config.cooldownEnabled = args[1] === 'on';
+                    await sendHumanMessage(sock, chatJid, `⏱ Cooldown ${args[1] === 'on' ? 'attivato' : 'disattivato'}.`);
                 }
                 return true;
             }
@@ -1553,13 +1290,8 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case '!aggiungiowner':
             case '!addowner':
             case '!nuovocoowner': {
-                if (!isOwner(sender, sock)) {
-                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato esclusivamente al proprietario principale.");
-                    return true;
-                }
-                
-                if (!targetMention) {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Per favore, tagga l'amico che vuoi promuovere ad owner (es. !aggiungiowner @utente).");
+                if (!isOwner(sender, sock) || !targetMention) {
+                    await sendHumanMessage(sock, chatJid, "⚠️ Tagga l'utente da promuovere ad owner.");
                     return true;
                 }
 
@@ -1567,20 +1299,14 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.protectedUsers.add(targetMention);
                 saveBotState();
 
-                await sendHumanMessage(sock, chatJid, `👑 L'amico è stato aggiunto con successo tra i co-owner del bot ed è ora protetto! (Stato salvato).`, { mentions: [targetMention] });
+                await sendHumanMessage(sock, chatJid, `👑 Utente aggiunto tra i co-owner ed ora protetto.`, { mentions: [targetMention] });
                 return true;
             }
 
             case '!rimuoviowner':
-            case '!delowner':
-            case '!rimuovicoowner': {
-                if (!isOwner(sender, sock)) {
-                    await sendHumanMessage(sock, chatJid, "⛔ Comando riservato esclusivamente al proprietario principale.");
-                    return true;
-                }
-                
-                if (!targetMention) {
-                    await sendHumanMessage(sock, chatJid, "⚠ Tagga l'amico che vuoi rimuovere dagli owner (es. !rimuoviowner @utente).");
+            case '!delowner': {
+                if (!isOwner(sender, sock) || !targetMention) {
+                    await sendHumanMessage(sock, chatJid, "⚠️ Tagga l'utente da rimuovere dai co-owner.");
                     return true;
                 }
 
@@ -1588,132 +1314,7 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                 config.protectedUsers.delete(targetMention);
                 saveBotState();
 
-                await sendHumanMessage(sock, chatJid, `🛡 L'amico è stato rimosso dai co-owner del bot. (Stato aggiornato).`, { mentions: [targetMention] });
-                return true;
-            }
-
-            case '!offline':
-            case '!assente': {
-                if (isOwner(sender, sock)) {
-                    config.offlineMode = true;
-                    await sendHumanMessage(sock, chatJid, "Modalità offline attiva.");
-                }
-                return true;
-            }
-
-            case '!online':
-            case '!presente': {
-                if (isOwner(sender, sock)) {
-                    config.offlineMode = false;
-                    await sendHumanMessage(sock, chatJid, "Modalità online attiva.");
-                }
-                return true;
-            }
-
-            case '!protezione': {
-                if (isOwner(sender, sock)) {
-                    const action = args[1];
-                    if (action === 'on') {
-                        if (targetMention) {
-                            config.protectedUsers.add(targetMention);
-                            saveBotState();
-                            await sendHumanMessage(sock, chatJid, `Utente protetto con successo in questo gruppo e salvato.`, { mentions: [targetMention] });
-                        } else {
-                            config.protectionEnabled = true;
-                            await sendHumanMessage(sock, chatJid, `Protezione avanzata attiva.`);
-                        }
-                    } else if (action === 'off') {
-                        config.protectionEnabled = false;
-                        if (targetMention) {
-                            config.protectedUsers.delete(targetMention);
-                            saveBotState();
-                        }
-                        await sendHumanMessage(sock, chatJid, "⚠ Protezione disattivata o utente rimosso dalle protezioni.");
-                    }
-                }
-                return true;
-            }
-
-            case '!broadcast': {
-                const broadText = messageText.replace(/^!broadcast/i, '').trim();
-                if (!broadText) return true;
-                await sendHumanMessage(sock, chatJid, `📡 Broadcast inviato: ${broadText}`);
-                return true;
-            }
-
-            case '!inspect': {
-                if (!isOwner(sender, sock) || !targetMention) return true;
-                const userWarns = warnings.get(targetMention + chatJid) || 0;
-                await sendHumanMessage(sock, chatJid, `🔍 **Scheda Utente (Qui)**\n• Warn: ${userWarns}`, { mentions: [targetMention] });
-                return true;
-            }
-
-            case '!lockgroup': {
-                if (isOwner(sender, sock)) {
-                    if (isGroup) {
-                        config.isLocked = true;
-                        await sendHumanMessage(sock, chatJid, "🔐 Questo gruppo è ora bloccato: solo gli admin possono scrivere.");
-                    }
-                }
-                return true;
-            }
-
-            case '!unlockgroup': {
-                if (isOwner(sender, sock)) {
-                    if (isGroup) {
-                        config.isLocked = false;
-                        await sendHumanMessage(sock, chatJid, "🔓 Questo gruppo è ora sbloccato per tutti.");
-                    }
-                }
-                return true;
-            }
-
-            case '!backup': {
-                if (!isOwner(sender, sock)) return true;
-                await sendHumanMessage(sock, OWNER_JID, `💾 Backup eseguito.`);
-                await sendHumanMessage(sock, chatJid, "💾 Backup inviato in privato.");
-                return true;
-            }
-
-            case '!emergencyoff': {
-                if (!isOwner(sender, sock)) return true;
-                config.isInactive = true;
-                await sendHumanMessage(sock, chatJid, "⚡ Emergenza attivata qui.");
-                return true;
-            }
-
-            case '!emergencyon': {
-                if (!isOwner(sender, sock)) return true;
-                config.isInactive = false;
-                await sendHumanMessage(sock, chatJid, "⚡ Bot riattivato qui.");
-                return true;
-            }
-
-            case '!statsbot': {
-                if (!isOwner(sender, sock)) return true;
-                await sendHumanMessage(sock, chatJid, `📈 Statistiche attive. Gruppi registrati: ${savedGroups.size}`);
-                return true;
-            }
-
-            case '!listagruppi': {
-                if (!isOwner(sender, sock)) return true;
-                if (savedGroups.size === 0) {
-                    await sendHumanMessage(sock, chatJid, "📂 Nessun gruppo memorizzato finora.");
-                    return true;
-                }
-                let listText = "📂 **LISTA GRUPPI E PARTECIPANTI:**\n\n";
-                for (let [id, gInfo] of savedGroups.entries()) {
-                    let groupName = gInfo.subject;
-                    let participantsList = "Impossibile recuperare i partecipanti";
-                    try {
-                        const metadata = await sock.groupMetadata(id);
-                        groupName = metadata.subject || groupName;
-                        participantsList = metadata.participants.map(p => `@${p.id.split('@')[0]}`).join(', ');
-                    } catch (e) {}
-
-                    listText += `• **Nome:** ${groupName}\n  **ID:** \`${id}\`\n  **Partecipanti:** ${participantsList}\n\n`;
-                }
-                await sendHumanMessage(sock, chatJid, listText);
+                await sendHumanMessage(sock, chatJid, `🛡 Utente rimosso dai co-owner.`, { mentions: [targetMention] });
                 return true;
             }
 
@@ -1740,71 +1341,44 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
 
             case '!gruppo': {
                 if (!isOwner(sender, sock)) return true;
-
                 const action = args[1]?.toLowerCase();
                 const targetGroupArg = args[2] || args.slice(2).join(' ');
 
-                const notificationText = 
-                    `🤖 *NOTIFICA DI SISTEMA*\n\n` +
-                    `Il bot è appena acceso ed è pronto all'uso! 🟢\n\n` +
-                    `📌 *Regola di utilizzo:* Potete utilizzare liberamente i comandi del bot in questo gruppo. Divertitevi!`;
-
                 if (targetGroupArg && (action === 'off' || action === 'on')) {
                     let targetChatJid = targetGroupArg.trim();
-                    if (!targetChatJid.endsWith('@g.us')) {
-                        targetChatJid += '@g.us';
-                    }
+                    if (!targetChatJid.endsWith('@g.us')) targetChatJid += '@g.us';
 
                     const targetConfig = getGroupConfig(targetChatJid);
-                    if (action === 'off') {
-                        targetConfig.isInactive = true;
-                        await sendHumanMessage(sock, chatJid, `🤖 Bot disattivato con successo nel gruppo con ID: \`${targetChatJid}\``);
-                    } else if (action === 'on') {
-                        targetConfig.isInactive = false;
-                        await sendHumanMessage(sock, chatJid, `🤖 Bot riattivato con successo nel gruppo con ID: \`${targetChatJid}\``);
-                        await sendHumanMessage(sock, targetChatJid, notificationText);
-                    }
+                    targetConfig.isInactive = (action === 'off');
+                    await sendHumanMessage(sock, chatJid, `🤖 Bot ${action === 'off' ? 'disattivato' : 'riattivato'} nel gruppo \`${targetChatJid}\``);
                     return true;
                 }
 
                 if (isGroup) {
-                    if (action === 'off') {
-                        config.isInactive = true;
-                        await sendHumanMessage(sock, chatJid, "🤖 Bot disattivato in questo specifico gruppo.");
-                    } else if (action === 'on') {
-                        config.isInactive = false;
-                        await sendHumanMessage(sock, chatJid, notificationText);
-                    }
-                } else {
-                    await sendHumanMessage(sock, chatJid, "⚠️ Per usare il comando qui, specifica l'azione e l'ID del gruppo.\nEsempio: `!gruppo off 120363000000000000@g.us`");
+                    config.isInactive = (action === 'off');
+                    await sendHumanMessage(sock, chatJid, `🤖 Bot ${action === 'off' ? 'disattivato' : 'riattivato'} in questo gruppo.`);
                 }
                 return true;
             }
         }
-
     } catch (error) {
         console.error("Errore:", error);
     }
     return false;
 }
 
-// 🛡️ GESTIONE EVENTO ANTI-ADD
 export async function handleGroupParticipantsUpdate(sock, update) {
     const { id: chatJid, participants, action } = update;
     
     if (action === 'add') {
         const phoneBlacklist = loadPhoneBlacklist();
-        
         for (let participantJid of participants) {
             const phoneNumber = participantJid.replace(/[^0-9]/g, '');
-            
             if (phoneBlacklist.includes(phoneNumber)) {
                 try {
                     await sock.groupParticipantsUpdate(chatJid, [participantJid], "remove");
-                    await sendHumanMessage(sock, chatJid, `⚠ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è inserito nella blacklist permanente e non può rientrare nel gruppo.`, { mentions: [participantJid] });
-                } catch (e) {
-                    console.error("Errore durante il ribannaggio automatico:", e);
-                }
+                    await sock.sendMessage(chatJid, { text: `⚠ **Tentativo di elusione bloccato**: Il numero +${phoneNumber} è nella blacklist permanente.`, mentions: [participantJid] });
+                } catch (e) {}
             }
         }
     }
