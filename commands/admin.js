@@ -188,19 +188,18 @@ const isProtected = (jid, config) => {
     return isOwner(jid) || config.protectedUsers.has(jid);
 };
 
-// ⚡ MOSTRA "STA SCRIVENDO" ED INVIA IMMEDIATAMENTE SENZA PAUSE FISSE
+// ⏱️ MOSTRA "STA SCRIVENDO" CON RITARDO DI ESATTAMENTE 2 SECONDI
 async function sendHumanMessage(sock, chatJid, content, options = {}) {
     try {
-        // Mostra "sta scrivendo..." all'istante
-        sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
-        
-        // Invia subito il messaggio
-        const result = await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
+        await sock.presenceSubscribe(chatJid).catch(() => {});
+        await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
 
-        // Disattiva "sta scrivendo..." subito dopo l'invio
-        sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
+        // Attesa di 2 secondi (2000 ms)
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-        return result;
+        await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
+
+        return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
     } catch (err) {
         console.error("Errore invio messaggio:", err);
         return await sock.sendMessage(chatJid, typeof content === 'string' ? { text: content, ...options } : content);
