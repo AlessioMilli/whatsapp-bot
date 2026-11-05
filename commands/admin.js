@@ -76,6 +76,10 @@ const mutedUsers = new Set();
 const cooldowns = new Map();
 const aiCooldowns = new Map();
 
+// 🌙 Gestione dello stato di assenza personale (Offline/Online)
+let isOwnerOffline = false;
+const pendingContacts = new Set();
+
 const customCommands = new Map();
 
 if (fs.existsSync(CUSTOM_COMMANDS_FILE)) {
@@ -177,6 +181,13 @@ const isOwner = (jid, sock) => {
     }
     if (sock?.user?.id && sock.user.id.replace(/[^0-9]/g, '') === cleanJid) return true;
     return false;
+};
+
+// 👨‍👩‍👦 Funzione per verificare se il mittente è uno dei genitori
+const isParent = (jid) => {
+    if (!jid) return false;
+    const cleanJid = jid.replace(/[^0-9]/g, '');
+    return cleanJid.includes("393288665544") || cleanJid.includes("393394998329");
 };
 
 const isProtected = (jid, config) => {
@@ -316,6 +327,15 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
                         (m.message?.audioMessage ? "[Messaggio Vocale]" : '');
         }
 
+        // 📩 RISPOSTA AUTOMATICA SE SEI OFFLINE (ESCLUDENDO I GENITORI)
+        if (!isGroup && isOwnerOffline && !m.key.fromMe && !isOwner(sender, sock)) {
+            if (!isParent(sender)) {
+                pendingContacts.add(sender);
+                await sendHumanMessage(sock, chatJid, "Alessio al momento non può risponderti quindi se vuoi chiacchierare con Alessio dovrai aspettare che rientra nella tua chat pronto per risponderti");
+                return true;
+            }
+        }
+
         if (isGroup && m.message?.imageMessage && !isOwner(sender, sock)) {
             const isUserRestricted = config.photoRestrictedUsers && config.photoRestrictedUsers.has(sender);
             if (config.photoFilter || isUserRestricted) {
@@ -434,6 +454,33 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
         }
 
         switch (command) {
+            case 'off':
+            case 'assente': {
+                if (!isGroup && isOwner(sender, sock)) {
+                    isOwnerOffline = true;
+                    await sendHumanMessage(sock, chatJid, "🌙 **Modalità Assente Attivata!**\n\nI tuoi genitori potranno scriverti liberamente senza risposte automatiche, mentre gli altri utenti riceveranno l'avviso.");
+                    return true;
+                }
+                break;
+            }
+
+            case 'online':
+            case 'presente': {
+                if (!isGroup && isOwner(sender, sock)) {
+                    isOwnerOffline = false;
+                    await sendHumanMessage(sock, chatJid, "☀️ **Modalità Online Attivata!**\n\nInvio della notifica di rientro in corso agli utenti che ti hanno cercato...");
+
+                    for (let contactJid of pendingContacts) {
+                        try {
+                            await sendHumanMessage(sock, contactJid, "Alessio adesso è ritornato disponibile per risponderti quindi se vuoi mandargli un messaggio scritto o vocale o chiamarlo facendogli una videochiamata con la faccia o senza puoi farlo liberatamente");
+                        } catch (e) {}
+                    }
+                    pendingContacts.clear();
+                    return true;
+                }
+                break;
+            }
+
             case 'impostaorario':
             case 'setorario': {
                 if (!isOwner(sender, sock)) {
@@ -674,73 +721,75 @@ export async function execute(sock, m, chatJid, messageText, sender, isGroup) {
             case 'commands':
             case 'aiuto':
             case 'menu': {
-                let menuText = `📋 LISTA COMPLETA DEI COMANDI DEL BOT
+                let menuText = `📋 **LISTA COMPLETA DEI COMANDI DEL BOT**\n\n` +
 
-🛑 GESTIONE MODERAZIONE E SANZIONI
-- mute @utente 🔇 - Muto perpetuo e cancellazione automatica messaggi
-- unmute @utente 🔊 - Revoca il muto perpetuo
-- warn @utente ⚠ - Gestione ammonizioni ad accumulo (3 livelli)
-- kick @utente (o rimuovi) ❌ - Rimuove ed espelle immediatamente l'utente
-- banphone <numero> 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso
-- sblocconumero <numero> ✅ - Rimuove il numero dalla blacklist permanente
-- masskick (o svuotagruppo) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)
-- deletegroup (o eliminagruppo) 🗑 - Svuota ed elimina o abbandona il gruppo
-- clearalltesto [parola] 🔍 - Elimina per tutti i messaggi con la parola indicata
-- clearsender @utente (o cleardue) 🧹 - Cancella tutti i messaggi scritti da un utente specifico
+`🛑 **GESTIONE MODERAZIONE E SANZIONI**\n\n` +
+`- mute @utente 🔇 - Muto perpetuo e cancellazione automatica messaggi\n\n` +
+`- unmute @utente 🔊 - Revoca il muto perpetuo\n\n` +
+`- warn @utente ⚠ - Gestione ammonizioni ad accumulo (3 livelli)\n\n` +
+`- kick @utente (o rimuovi) ❌ - Rimuove ed espelle immediatamente l'utente\n\n` +
+`- banphone <numero> 🚫 - Inserisce il numero nella blacklist permanente e previene il re-ingresso\n\n` +
+`- sblocconumero <numero> ✅ - Rimuove il numero dalla blacklist permanente\n\n` +
+`- masskick (o svuotagruppo) 🧹 - Rimuove tutti i partecipanti (lascia admin e bot)\n\n` +
+`- deletegroup (o eliminagruppo) 🗑 - Svuota ed elimina o abbandona il gruppo\n\n` +
+`- clearalltesto [parola] 🔍 - Elimina per tutti i messaggi con la parola indicata\n\n` +
+`- clearsender @utente (o cleardue) 🧹 - Cancella tutti i messaggi scritti da un utente specifico\n\n` +
 
-🤖 INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.8 FLASH)
-- setgeminiak [chiave] 🔑 - Imposta la chiave API direttamente in chat privata
-- parla [domanda] (o ia) 💡 - Interagisci con Google Gemini solo testo
-- cerca [query] (o web) 🌐 - Cerca informazioni ed elabora risposte via web search
+`🤖 **INTELLIGENZA ARTIFICIALE (GOOGLE GEMINI 3.8 FLASH)**\n\n` +
+`- setgeminiak [chiave] 🔑 - Imposta la chiave API direttamente in chat privata\n\n` +
+`- parla [domanda] (o ia) 💡 - Interagisci con Google Gemini solo testo\n\n` +
+`- cerca [query] (o web) 🌐 - Cerca informazioni ed elabora risposte via web search\n\n` +
 
-⚙️ GESTIONE AMMINISTRATORI E AUTOMAZIONE
-- impostaorario spegnimento/accensione [HH:MM] ⏰ - Cambia gli orari di stop/avvio automatico
-- promuovi @utente ⭐ - Promuove l'utente amministratore
-- demuovi @utente (o quickdemote) 👤 - Rimuove subito i poteri di admin
-- multidemote @u1 @u2... 👥 - Rimuove i poteri di admin a più utenti insieme
-- onlyadmin on/off (@utente) 🔒 - Riserva l'uso dei comandi solo agli admin del gruppo
-- novita [testo] (o news) 📢 - Invia un annuncio diretto nel gruppo per comunicare nuove funzioni o rimozioni
+`⚙️ **GESTIONE AMMINISTRATORI E AUTOMAZIONE**\n\n` +
+`- impostaorario spegnimento/accensione [HH:MM] ⏰ - Cambia gli orari di stop/avvio automatico\n\n` +
+`- promuovi @utente ⭐ - Promuove l'utente amministratore\n\n` +
+`- demuovi @utente (o quickdemote) 👤 - Rimuove subito i poteri di admin\n\n` +
+`- multidemote @u1 @u2... 👥 - Rimuove i poteri di admin a più utenti insieme\n\n` +
+`- onlyadmin on/off (@utente) 🔒 - Riserva l'uso dei comandi solo agli admin del gruppo\n\n` +
+`- novita [testo] (o news) 📢 - Invia un annuncio diretto nel gruppo per comunicare nuove funzioni o rimozioni\n\n` +
 
-⚙️ IMPOSTAZIONI E SICUREZZA GRUPPO
-- checkadmin 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo
-- gruppo on/off [ID_gruppo] 🤖 - Attiva/disattiva il bot nel gruppo (anche da remoto)
-- editgroup on/off ✏ - Gestisce la modifica info gruppo
-- approva on/off 📋 - Gestisce approvazione nuovi membri
-- addmember on/off ➕ - Gestisce restrizione aggiunta partecipanti
-- history on/off 📜 - Invio cronologia messaggi ai nuovi membri
-- invitelink on/off 🔗 - Accesso tramite link d'invito
-- setname [nome] 🏷 - Cambia istantaneamente il nome del gruppo
-- lockinfo / unlockinfo 🔒 - Blocca o sblocca i dettagli del gruppo
-- link on/off 🌐 - Cancellazione automatica link esterni
-- antiphoto on/off (@utente) 📸 - Blocco automatico foto non autorizzate (globale o utente)
-- cooldown on/off ⏱ - Limite tempo antispam tra comandi
+`⚙️ **IMPOSTAZIONI E SICUREZZA GRUPPO**\n\n` +
+`- checkadmin 🔍 - Verifica istantanea dei permessi amministrativi nel gruppo\n\n` +
+`- gruppo on/off [ID_gruppo] 🤖 - Attiva/disattiva il bot nel gruppo (anche da remoto)\n\n` +
+`- editgroup on/off ✏ - Gestisce la modifica info gruppo\n\n` +
+`- approva on/off 📋 - Gestisce approvazione nuovi membri\n\n` +
+`- addmember on/off ➕ - Gestisce restrizione aggiunta partecipanti\n\n` +
+`- history on/off 📜 - Invio cronologia messaggi ai nuovi membri\n\n` +
+`- invitelink on/off 🔗 - Accesso tramite link d'invito\n\n` +
+`- setname [nome] 🏷 - Cambia istantaneamente il nome del gruppo\n\n` +
+`- lockinfo / unlockinfo 🔒 - Blocca o sblocca i dettagli del gruppo\n\n` +
+`- link on/off 🌐 - Cancellazione automatica link esterni\n\n` +
+`- antiphoto on/off (@utente) 📸 - Blocco automatico foto non autorizzate (globale o utente)\n\n` +
+`- cooldown on/off ⏱ - Limite tempo antispam tra comandi\n\n` +
 
-🆔 IDENTIFICAZIONE, AGGIORNAMENTO E COMANDI EXTRA
-- getjid 📌 - Mostra il JID unico della chat corrente
-- getjid gruppo [nome] 📋 - Cerca JID gruppi
-- getjid numero <num> / getjid utente <nome> / getjid @utente 👤 - Cerca JID utente
-- aggiornacodice (o reload) 🔄 - Salva e aggiorna le protezioni e lo stato del bot
-- aggiungicomando [cmd] [testo] ➕ - Aggiunge un comando personalizzato
-- rimuovicomando [cmd] 🗑️ - Rimuove un comando personalizzato
-- cleandb 🗄️ - Pulisce e azzera il database degli avvertimenti
+`🆔 **IDENTIFICAZIONE, AGGIORNAMENTO E COMANDI EXTRA**\n\n` +
+`- getjid 📌 - Mostra il JID unico della chat corrente\n\n` +
+`- getjid gruppo [nome] 📋 - Cerca JID gruppi\n\n` +
+`- getjid numero <num> / getjid utente <nome> / getjid @utente 👤 - Cerca JID utente\n\n` +
+`- aggiornacodice (o reload) 🔄 - Salva e aggiorna le protezioni e lo stato del bot\n\n` +
+`- aggiungicomando [cmd] [testo] ➕ - Aggiunge un comando personalizzato\n\n` +
+`- rimuovicomando [cmd] 🗑️ - Rimuove un comando personalizzato\n\n` +
+`- cleandb 🗄️ - Pulisce e azzera il database degli avvertimenti\n\n` +
 
-💬 SUPPORTO E BENVENUTO
-- commands (o aiuto / menu) 📖 - Mostra questo menu comandi
-- chiedialessio [mess] ✉️ - Invia una domanda diretta al supporto
-- tagall (o tutti) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti
-- poll [domanda] [opz 1] [opz 2] 📊 - Sondaggio interattivo
-- welcome on/off 👋 - Gestisce il benvenuto automatico
-- ripeti [messaggio] [numero] (o flood) 🔁 - Ripete un messaggio più volte con etichetta progressiva
-- clearmetutto (o botclean) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
+`💬 **SUPPORTO E BENVENUTO**\n\n` +
+`- commands (o aiuto / menu) 📖 - Mostra questo menu comandi\n\n` +
+`- chiedialessio [mess] ✉️ - Invia una domanda diretta al supporto\n\n` +
+`- tagall (o tutti) [messaggio] 📢 - Avviso con menzione di tutti i partecipanti\n\n` +
+`- poll [domanda] [opz 1] [opz 2] 📊 - Sondaggio interattivo\n\n` +
+`- welcome on/off 👋 - Gestisce il benvenuto automatico\n\n` +
+`- ripeti [messaggio] [numero] (o flood) 🔁 - Ripete un messaggio più volte con etichetta progressiva\n\n` +
+`- clearmetutto (o botclean) 🗑️ - Cancella tutti i messaggi inviati dal bot in questa chat`;
 
                 if (isOwner(sender, sock)) {
-                    menuText += `\n\n🚀 COMANDI ESCLUSIVI OWNER\n1. inspect @utente 🔍 - Mostra la scheda informativa dell'utente nel database\n2. lockgroup / unlockgroup`;
+                    menuText += `\n\n🚀 **COMANDI ESCLUSIVI OWNER**\n\n` +
+                    `1. inspect @utente 🔍 - Mostra la scheda informativa dell'utente nel database\n\n` +
+                    `2. lockgroup / unlockgroup`;
                 }
 
                 if (customCommands.size > 0) {
-                    menuText += `\n\n✨ **COMANDI PERSONALIZZATI AGGIUNTI:**\n`;
+                    menuText += `\n\n✨ **COMANDI PERSONALIZZATI AGGIUNTI:**\n\n`;
                     for (let cmd of customCommands.keys()) {
-                        menuText += `• \`${cmd}\`\n`;
+                        menuText += `• \`${cmd}\`\n\n`;
                     }
                 }
 
